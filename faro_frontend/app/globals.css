@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f6f2ec;
+  --ink: #1e1a16;
+  --muted: #5a5249;
+  --accent: #0f766e;
+  --accent-strong: #0b4f4a;
+  --gold: #c59a4a;
+  --clay: #c66b2b;
+  --shadow: rgba(15, 20, 20, 0.1);
+}
+
+@theme inline {
+  --color-background: var(--canvas);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-manrope);
+  --font-serif: var(--font-fraunces);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+}
+
+.font-serif {
+  font-family: var(--font-fraunces), "Times New Roman", serif;
+}
+
+.page-shell {
+  position: relative;
+  min-height: 100vh;
+  /* Subtle greenish vertical gradient with faint vertical lines */
+  background:
+    repeating-linear-gradient(
+      to right,
+      rgba(180, 200, 190, 0.08) 0px,
+      rgba(180, 200, 190, 0.08) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    linear-gradient(180deg, #f6faf7 0%, #eaf3ef 100%);
+  overflow: hidden;
+}
+
+.page-shell::before,
+.page-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.page-shell::before {
+  background-image:
+    linear-gradient(120deg, rgba(15, 118, 110, 0.08), transparent 50%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(30, 26, 22, 0.06) 0,
+      rgba(30, 26, 22, 0.06) 1px,
+      transparent 1px,
+      transparent 32px
+    );
+  mix-blend-mode: multiply;
+}
+
+.page-shell::after {
+  background-image:
+    radial-gradient(circle at 25% 30%, rgba(255, 255, 255, 0.35), transparent 45%),
+    radial-gradient(circle at 75% 70%, rgba(255, 255, 255, 0.25), transparent 40%);
+}
+
+.hero-banner {
+  position: relative;
+  overflow: hidden;
+}
+
+.full-bleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
+
+.hero-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 820px !important;
+  background-image: url("/banner.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.15;
+  z-index: 0;
+}
+
+.hero-banner > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(30, 26, 22, 0.08);
+  box-shadow: 0 24px 60px var(--shadow);
+  backdrop-filter: blur(16px);
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, #0f766e 0%, #c59a4a 45%, #c66b2b 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
