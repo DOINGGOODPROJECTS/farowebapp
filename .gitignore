@@ -1,0 +1,8 @@
+node_modules/
+.env
+faro_backend/.env
+faro_backend/.env.production
+faro_backend/.next/
+faro_frontend/.next/
+faro_frontend/out/
+nginx/certs/

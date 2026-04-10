@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:frontend\"",
+    "dev:server": "npm run dev --prefix faro_backend",
+    "dev:frontend": "npm run dev --prefix faro_frontend"
+  },
+  "dependencies": {
+    "nodemailer": "^7.0.12"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
