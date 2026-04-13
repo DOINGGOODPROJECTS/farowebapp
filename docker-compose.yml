@@ -38,7 +38,9 @@ services:
       DB_HOST: db
       DB_PORT: "3306"
     expose:
-      - "5100"
+      - "5000"
+    ports:
+      - "5000:5000"
 
   # ── Frontend (Next.js app) ──────────────────────────────────────────────────
   frontend:
@@ -46,7 +48,7 @@ services:
       context: ./faro_frontend
       dockerfile: Dockerfile
       args:
-        BACKEND_URL: http://backend:5100
+        BACKEND_URL: http://backend:5000
     container_name: faro_frontend
     restart: unless-stopped
     depends_on:
@@ -54,24 +56,14 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      BACKEND_URL: http://backend:5100
+      BACKEND_URL: http://backend:5000
     expose:
       - "3100"
-
-  # ── Nginx reverse proxy ─────────────────────────────────────────────────────
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: faro_nginx
-    restart: unless-stopped
-    depends_on:
-      - frontend
-      - backend
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
+      - "3100:3100"
+
+  # Note: host Nginx will handle TLS and proxying. The dockerized nginx
+  # service has been removed to avoid conflicts with the host nginx.
 
 volumes:
   db_data:
