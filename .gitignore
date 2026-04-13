@@ -1,4 +1,5 @@
 node_modules/
+.git-backups/
 .env
 faro_backend/.env
 faro_backend/.env.production
