@@ -38,9 +38,9 @@ services:
       DB_HOST: db
       DB_PORT: "3306"
     expose:
-      - "5000"
+      - "5100"
     ports:
-      - "5000:5000"
+      - "5100:5100"
 
   # ── Frontend (Next.js app) ──────────────────────────────────────────────────
   frontend:
@@ -48,7 +48,7 @@ services:
       context: ./faro_frontend
       dockerfile: Dockerfile
       args:
-        BACKEND_URL: http://backend:5000
+        BACKEND_URL: http://backend:5100
     container_name: faro_frontend
     restart: unless-stopped
     depends_on:
@@ -56,7 +56,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      BACKEND_URL: http://backend:5000
+      BACKEND_URL: http://backend:5100
     expose:
       - "3100"
     ports:

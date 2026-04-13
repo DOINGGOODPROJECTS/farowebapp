@@ -14,7 +14,7 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # BACKEND_URL is the internal Docker service URL used by Next.js rewrites at build time
-ARG BACKEND_URL=http://backend:5000
+ARG BACKEND_URL=http://backend:5100
 ENV BACKEND_URL=${BACKEND_URL}
 RUN npm run build
 RUN npm prune --omit=dev
