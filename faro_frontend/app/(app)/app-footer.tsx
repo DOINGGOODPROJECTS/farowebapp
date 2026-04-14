@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 
 export default function AppFooter() {
   const pathname = usePathname();
-  if (pathname === "/chat") {
+  if (pathname === "/") {
     return null;
   }
 
@@ -26,7 +26,7 @@ export default function AppFooter() {
           Navigation
         </p>
         <div className="flex flex-col gap-2 font-semibold text-[#4f463c]">
-          <a className="transition hover:text-[#0f766e]" href="/chat">
+          <a className="transition hover:text-[#0f766e]" href="/">
             Chat with Faro
           </a>
           <a className="transition hover:text-[#0f766e]" href="/search">
@@ -35,7 +35,7 @@ export default function AppFooter() {
           <a className="transition hover:text-[#0f766e]" href="/comparison">
             Market Comparison
           </a>
-          <a className="transition hover:text-[#0f766e]" href="/chat">
+          <a className="transition hover:text-[#0f766e]" href="/">
             Adinkra AI
           </a>
         </div>

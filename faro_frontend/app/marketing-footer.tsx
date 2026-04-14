@@ -18,7 +18,7 @@ export default function MarketingFooter() {
           Navigation
         </p>
         <div className="flex flex-col gap-2 text-sm font-semibold text-[#4f463c]">
-          <Link className="transition hover:text-[#0f766e]" href="/chat">
+          <Link className="transition hover:text-[#0f766e]" href="/">
             Chat with Faro
           </Link>
           <Link className="transition hover:text-[#0f766e]" href="/search">

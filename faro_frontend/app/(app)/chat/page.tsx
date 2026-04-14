@@ -661,7 +661,7 @@ export default function ChatPage() {
     if (!question || autoQuestionHandled.current) return;
     autoQuestionHandled.current = true;
     sendMessage(question);
-    router.replace("/chat");
+    router.replace("/");
   }, [router, searchParams]);
 
   const groupedMessages = useMemo(() => messages, [messages]);

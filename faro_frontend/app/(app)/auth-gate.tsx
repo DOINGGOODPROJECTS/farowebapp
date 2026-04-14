@@ -24,7 +24,7 @@ export default function AuthGate({
   const router = useRouter();
   const pathname = usePathname();
   const allowGuest =
-    pathname?.startsWith("/chat") || pathname?.startsWith("/comparison");
+    pathname === "/" || pathname?.startsWith("/comparison");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 

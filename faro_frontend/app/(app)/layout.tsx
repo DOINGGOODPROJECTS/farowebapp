@@ -6,7 +6,7 @@ import MarketingFooter from "../marketing-footer";
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/search", label: "Search" },
-  { href: "/chat", label: "AI Chat" },
+    { href: "/", label: "AI Chat" },
   { href: "/comparison", label: "Comparison" },
   { href: "/notifications", label: "Notifications" },
   { href: "/profile", label: "Profile" },

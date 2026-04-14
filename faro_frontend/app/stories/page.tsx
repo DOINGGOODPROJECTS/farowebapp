@@ -242,7 +242,7 @@ export default function StoriesPage() {
             </div>
           </Link>
           <nav className="hidden items-center gap-4 text-xs font-semibold uppercase tracking-[0.3em] text-[#6a6056] lg:flex">
-            <Link className="transition hover:text-[#0f766e] font-extrabold text-sm" href="/chat">
+            <Link className="transition hover:text-[#0f766e] font-extrabold text-sm" href="/">
               ASK FARO (Beta)
             </Link>
             <span className="text-[#b8aba0]">|</span>
@@ -259,7 +259,7 @@ export default function StoriesPage() {
           </nav>
           <div className="flex items-center gap-3">
             <Link
-              href="/chat"
+              href="/"
               className="rounded-full bg-[#1e1a16] px-6 py-4 text-xs font-semibold text-white shadow-sm transition hover:bg-black"
             >
               Launch app
@@ -512,7 +512,7 @@ export default function StoriesPage() {
               Navigation
             </p>
             <div className="flex flex-col gap-2 text-sm font-semibold text-[#4f463c]">
-              <Link className="transition hover:text-[#0f766e]" href="/chat">
+              <Link className="transition hover:text-[#0f766e]" href="/">
                 Chat with Faro
               </Link>
               <Link className="transition hover:text-[#0f766e]" href="/search">
