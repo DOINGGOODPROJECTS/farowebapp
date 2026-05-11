@@ -1,0 +1,24 @@
+{
+  "name": "faro-ai-web-research-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "agent": "node runAgent.js",
+    "batch": "node batchAgent.js",
+    "scheduler": "node scheduler.js",
+    "sync-vectors": "node rag/syncVectors.js",
+    "chat": "node rag/faroChat.js",
+    "google-auth": "node authSetup.js"
+  },
+  "dependencies": {
+    "@qdrant/js-client-rest": "^1.9.0",
+    "dotenv": "^16.4.7",
+    "googleapis": "^171.4.0",
+    "mysql2": "^3.11.5",
+    "node-cron": "^3.0.3",
+    "openai": "^4.77.0",
+    "playwright": "^1.49.1",
+    "uuid": "^11.0.3",
+    "zod": "^3.24.1"
+  }
+}
