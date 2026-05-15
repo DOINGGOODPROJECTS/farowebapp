@@ -31,6 +31,7 @@ COPY --from=build --chown=faro:faro /app/node_modules ./node_modules
 COPY --from=build --chown=faro:faro /app/.next ./.next
 COPY --from=build --chown=faro:faro /app/next.config.ts ./next.config.ts
 COPY --from=build --chown=faro:faro /app/schema.sql ./schema.sql
+COPY --from=build --chown=faro:faro /app/data ./data
 
 USER faro
 EXPOSE 5100

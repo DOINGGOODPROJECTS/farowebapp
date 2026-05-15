@@ -10,5 +10,4 @@ pnpm-debug.log*
 .env*
 
 # misc
-data
 notes.txt
