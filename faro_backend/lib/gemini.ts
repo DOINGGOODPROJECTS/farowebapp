@@ -67,6 +67,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+// ── Hermes client (Ollama — OpenAI-compatible) ────────────────────────────────
+
+let _hermes: OpenAI | null = null;
+function getHermes(): OpenAI {
+  if (!_hermes) {
+    _hermes = new OpenAI({
+      baseURL: process.env.HERMES_BASE_URL || 'http://localhost:11434/v1',
+      apiKey: 'ollama',
+    });
+  }
+  return _hermes;
+}
+
 // ── Gemini client ─────────────────────────────────────────────────────────────
 
 let _gemini: GoogleGenAI | null = null;
@@ -79,7 +92,7 @@ function getGemini(): GoogleGenAI {
   return _gemini;
 }
 
-// ── OpenAI client (fallback 1) ────────────────────────────────────────────────
+// ── OpenAI client ─────────────────────────────────────────────────────────────
 
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
@@ -95,10 +108,12 @@ function getOpenAI(): OpenAI {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const HERMES_MODEL      = process.env.HERMES_MODEL || 'hermes3:3b';
+const GEMINI_MODEL      = 'gemini-2.5-flash';
 const OPENAI_FALLBACK_MODEL = 'gpt-4.1-nano';
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 3000;
+const MAX_RETRIES       = 2;
+const RETRY_DELAY_MS    = 3000;
+const HERMES_TIMEOUT_MS = 30000;
 const GEMINI_TIMEOUT_MS = 10000;
 const OPENAI_TIMEOUT_MS = 12000;
 const CLAUDE_TIMEOUT_MS = 15000;
@@ -116,7 +131,35 @@ function isTransient(error: unknown): boolean {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ── Fallback 1: GPT-4.1-nano ──────────────────────────────────────────────────
+// ── Provider: Hermes (local Ollama) ──────────────────────────────────────────
+
+async function callHermes(
+  message: string,
+  profile: UserProfile,
+  history: ConversationTurn[],
+): Promise<string> {
+  const hermes = getHermes();
+  const systemInstruction = buildSystemInstruction(profile);
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemInstruction },
+    ...history.map((turn) => ({
+      role: turn.role === 'user' ? ('user' as const) : ('assistant' as const),
+      content: turn.text,
+    })),
+    { role: 'user', content: message },
+  ];
+
+  const response = await hermes.chat.completions.create({
+    model: HERMES_MODEL,
+    messages,
+    temperature: 0.4,
+  });
+
+  return (response.choices[0]?.message?.content ?? '').trim();
+}
+
+// ── Provider: GPT-4.1-nano ────────────────────────────────────────────────────
 
 async function callOpenAIFallback(
   message: string,
@@ -144,7 +187,7 @@ async function callOpenAIFallback(
   return (response.choices[0]?.message?.content ?? '').trim();
 }
 
-// ── Fallback 2: Claude Agent ──────────────────────────────────────────────────
+// ── Provider: Claude Agent ────────────────────────────────────────────────────
 
 async function callClaudeAgent(
   message: string,
@@ -161,10 +204,8 @@ async function callClaudeAgent(
     throw new Error('CLAUDE_AGENT_ID is not configured.');
   }
 
-  // Inject profile into the prompt since the agent handles system context
   const systemContext = buildSystemInstruction(profile);
 
-  // Build a single prompt string with history prepended
   const historyText = history
     .map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
     .join('\n');
@@ -211,15 +252,32 @@ async function callClaudeAgent(
   return reply.trim();
 }
 
-// ── Primary export: Gemini → GPT-4.1-nano → Claude Agent ─────────────────────
+// ── Primary export ────────────────────────────────────────────────────────────
+// Provider order when USE_HERMES=true : Hermes → Gemini → GPT-4.1-nano → Claude
+// Provider order when USE_HERMES=false: Gemini → GPT-4.1-nano → Claude
 
 export async function callGemini(
   message: string,
   profile: UserProfile = {},
   history: ConversationTurn[] = [],
 ): Promise<string> {
-  const ai = getGemini();
+  const useHermes = process.env.USE_HERMES === 'true';
 
+  // ── 1. Hermes (local Ollama) ───────────────────────────────────────────────
+  if (useHermes) {
+    try {
+      console.log('[faro] Using Hermes (Ollama)');
+      return await withTimeout(
+        callHermes(message, profile, history),
+        HERMES_TIMEOUT_MS,
+      );
+    } catch (hermesError) {
+      console.warn('[faro] Hermes failed → trying Gemini', String(hermesError));
+    }
+  }
+
+  // ── 2. Gemini ─────────────────────────────────────────────────────────────
+  const ai = getGemini();
   const contents = [
     ...history.map((turn) => ({
       role: turn.role,
@@ -227,13 +285,11 @@ export async function callGemini(
     })),
     { role: 'user' as const, parts: [{ text: message }] },
   ];
-
   const config = {
     systemInstruction: buildSystemInstruction(profile),
     temperature: 0.4,
   };
 
-  // ── 1. Try Gemini (with retries on transient errors) ──────────────────────
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const response = await withTimeout(
@@ -242,12 +298,12 @@ export async function callGemini(
       );
       return (response.text ?? '').trim();
     } catch (error) {
-      if (!isTransient(error)) break; // non-transient → skip to fallback 1
+      if (!isTransient(error)) break;
       if (attempt < MAX_RETRIES - 1) await sleep(RETRY_DELAY_MS);
     }
   }
 
-  // ── 2. Fallback 1: GPT-4.1-nano ───────────────────────────────────────────
+  // ── 3. GPT-4.1-nano ───────────────────────────────────────────────────────
   console.warn('[faro] Gemini failed → trying GPT-4.1-nano');
   try {
     return await withTimeout(
@@ -258,7 +314,7 @@ export async function callGemini(
     console.warn('[faro] GPT-4.1-nano failed → trying Claude agent', String(openaiError));
   }
 
-  // ── 3. Fallback 2: Claude Agent ───────────────────────────────────────────
+  // ── 4. Claude Agent ───────────────────────────────────────────────────────
   try {
     return await withTimeout(
       callClaudeAgent(message, profile, history),

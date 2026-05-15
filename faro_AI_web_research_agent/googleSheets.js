@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -217,4 +218,242 @@ export async function appendRowToSheet(id, record) {
 
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
   console.log(`  Row added to Google Sheet: ${sheetUrl}`);
+}
+
+/**
+ * Reads all data rows (row 3 onwards) from the sheet.
+ * Returns an array of { city, rowNumber, isComplete } objects.
+ * isComplete = true only when every one of the 29 data columns is non-empty.
+ */
+export async function getSheetRows() {
+  const auth    = getAuthClient();
+  const sheets  = google.sheets({ version: "v4", auth });
+  const drive   = google.drive({ version: "v3", auth });
+
+  const spreadsheetId = await getOrCreateSheet(sheets, drive);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Records!A3:AZ",
+  });
+
+  const rows = res.data.values || [];
+
+  return rows
+    .map((row, i) => {
+      const city = (row[4] || "").trim();   // Column E = City (0-based index 4)
+      // Data columns: indices 17–45 (29 columns across all 5 categories)
+      const dataCols = row.slice(17, 46);
+      const isComplete =
+        dataCols.length === 29 &&
+        dataCols.every(v => v && String(v).trim().length > 0);
+      return {
+        city,
+        rowNumber: i + 3,   // 1-based sheet row (first data row = row 3)
+        isComplete,
+      };
+    })
+    .filter(r => r.city.length > 0);
+}
+
+/**
+ * Overwrites an existing incomplete row (identified by 1-based rowNumber)
+ * with a freshly researched city profile — all columns filled.
+ */
+export async function updateCityProfileRow(rowNumber, profile) {
+  const auth    = getAuthClient();
+  const sheets  = google.sheets({ version: "v4", auth });
+  const drive   = google.drive({ version: "v3", auth });
+
+  const spreadsheetId = await getOrCreateSheet(sheets, drive);
+  const now = new Date().toISOString();
+  const id  = uuidv4();
+
+  const s = (v) => (v == null ? "" : String(v).trim());
+
+  const row = [
+    id,
+    "city_profile",
+    `${profile.city}, ${profile.state} — Comprehensive City Profile`,
+    `${profile.city}, ${profile.state}`,
+    profile.city,
+    profile.state,
+    "United States",
+    `Comprehensive entrepreneur dataset for ${profile.city}, ${profile.state}: economic indicators, business ecosystem, grants, policy incentives, and relocation costs.`,
+    s(profile.primarySourceUrl),
+    "Multiple Public Sources (Census, SBA, City Gov, Chamber)",
+    85, "high", "active",
+    now, now, now, now,
+    s(profile.cost_of_living),
+    s(profile.housing_rent_estimates),
+    s(profile.median_income),
+    s(profile.employment_indicators),
+    s(profile.industry_strengths),
+    s(profile.business_environment),
+    s(profile.minority_representation),
+    s(profile.incubators_accelerators),
+    s(profile.coworking_spaces),
+    s(profile.startup_hubs),
+    s(profile.mentorship_networks),
+    s(profile.chambers_of_commerce),
+    s(profile.black_business_organizations),
+    s(profile.grant_name),
+    s(profile.funder),
+    s(profile.eligibility_criteria),
+    s(profile.funding_amount),
+    s(profile.deadline),
+    s(profile.application_link),
+    s(profile.geographic_scope),
+    s(profile.target_audience),
+    s(profile.tax_incentives),
+    s(profile.startup_support_programs),
+    s(profile.minority_business_certifications),
+    s(profile.government_backed_initiatives),
+    s(profile.living_expenses),
+    s(profile.business_setup_costs),
+    s(profile.hiring_costs),
+    s(profile.utilities_and_infrastructure),
+  ];
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Records!A${rowNumber}`,
+    valueInputOption: "RAW",
+    resource: { values: [row] },
+  });
+
+  console.log(`  Row ${rowNumber} updated for ${profile.city} → https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
+}
+
+/**
+ * Writes ONE comprehensive city-profile row with ALL 46 columns filled.
+ * Called by cityProfileAgent.js.
+ *
+ * @param {object} profile — flat object with all city data fields
+ */
+export async function appendCityProfileRow(profile) {
+  const auth    = getAuthClient();
+  const sheets  = google.sheets({ version: "v4", auth });
+  const drive   = google.drive({ version: "v3", auth });
+
+  const spreadsheetId = await getOrCreateSheet(sheets, drive);
+  const now = new Date().toISOString();
+  const id  = uuidv4();
+
+  const s = (v) => (v == null ? "" : String(v).trim());
+
+  const row = [
+    // ── CORE (17 cols) ──────────────────────────────────────────────────────
+    id,
+    "city_profile",
+    `${profile.city}, ${profile.state} — Comprehensive City Profile`,
+    `${profile.city}, ${profile.state}`,
+    profile.city,
+    profile.state,
+    "United States",
+    `Comprehensive entrepreneur dataset for ${profile.city}, ${profile.state}: economic indicators, business ecosystem, grants, policy incentives, and relocation costs.`,
+    s(profile.primarySourceUrl),
+    "Multiple Public Sources (Census, SBA, City Gov, Chamber)",
+    85,       // confidence_score
+    "high",   // confidence_level
+    "active", // status
+    now,      // date_fetched
+    now,      // last_verified
+    now,      // created_at
+    now,      // updated_at
+
+    // ── CITY ECONOMIC DATA (7 cols) ─────────────────────────────────────────
+    s(profile.cost_of_living),
+    s(profile.housing_rent_estimates),
+    s(profile.median_income),
+    s(profile.employment_indicators),
+    s(profile.industry_strengths),
+    s(profile.business_environment),
+    s(profile.minority_representation),
+
+    // ── BUSINESS ECOSYSTEM (6 cols) ─────────────────────────────────────────
+    s(profile.incubators_accelerators),
+    s(profile.coworking_spaces),
+    s(profile.startup_hubs),
+    s(profile.mentorship_networks),
+    s(profile.chambers_of_commerce),
+    s(profile.black_business_organizations),
+
+    // ── GRANTS & FUNDING (8 cols) ───────────────────────────────────────────
+    s(profile.grant_name),
+    s(profile.funder),
+    s(profile.eligibility_criteria),
+    s(profile.funding_amount),
+    s(profile.deadline),
+    s(profile.application_link),
+    s(profile.geographic_scope),
+    s(profile.target_audience),
+
+    // ── POLICY INCENTIVES (4 cols) ──────────────────────────────────────────
+    s(profile.tax_incentives),
+    s(profile.startup_support_programs),
+    s(profile.minority_business_certifications),
+    s(profile.government_backed_initiatives),
+
+    // ── COST & RELOCATION DATA (4 cols) ─────────────────────────────────────
+    s(profile.living_expenses),
+    s(profile.business_setup_costs),
+    s(profile.hiring_costs),
+    s(profile.utilities_and_infrastructure),
+  ];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "Records!A3",
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    resource: { values: [row] },
+  });
+
+  const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+  console.log(`  City profile row written for ${profile.city} → ${sheetUrl}`);
+}
+
+/**
+ * Reads ALL city profile rows from the sheet and returns them as structured
+ * objects keyed by the column header names from row 2 (HEADER_ROW).
+ * This is what Faro Chat reads to answer user questions.
+ *
+ * Returns an array like:
+ * [
+ *   {
+ *     "City": "Atlanta", "State": "Georgia",
+ *     "Cost of Living": "...", "Grant Name": "...", ...
+ *   },
+ *   ...
+ * ]
+ */
+export async function readAllCityProfiles() {
+  const auth    = getAuthClient();
+  const sheets  = google.sheets({ version: "v4", auth });
+  const drive   = google.drive({ version: "v3", auth });
+
+  const spreadsheetId = await getOrCreateSheet(sheets, drive);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Records!A1:AZ",
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 3) return [];
+
+  // Row 2 (index 1) = column headers
+  const headers = rows[1];
+
+  return rows
+    .slice(2)                          // skip group row + header row
+    .map(row => {
+      const profile = {};
+      headers.forEach((header, i) => {
+        profile[header] = (row[i] || "").trim();
+      });
+      return profile;
+    })
+    .filter(p => p["City"] && p["City"].length > 0);
 }

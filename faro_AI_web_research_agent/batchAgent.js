@@ -3,7 +3,9 @@ import { fetchPageText }        from "./fetchPage.js";
 import { extractRecordFromText } from "./extractRecord.js";
 import { saveRecord }            from "./saveRecord.js";
 import { normalizeLocation }     from "./normalizeLocation.js";
-import { embedAndUpsert }        from "./rag/embeddings.js";
+import { embedAndUpsert, ensureCollection } from "./rag/embeddings.js";
+
+const CONCURRENCY = 5;
 
 const urlsFile = process.argv[2] || "urls.json";
 
@@ -15,16 +17,12 @@ try {
   process.exit(1);
 }
 
-console.log(`Processing ${urls.length} URLs from ${urlsFile}\n`);
+console.log(`Processing ${urls.length} URLs from ${urlsFile} (concurrency: ${CONCURRENCY})\n`);
 
-let saved = 0;
-let skipped = 0;
-let failed = 0;
+await ensureCollection();
 
-for (let i = 0; i < urls.length; i++) {
-  const url = urls[i];
-  console.log(`[${i + 1}/${urls.length}] ${url}`);
-
+async function processUrl(url, index) {
+  console.log(`[${index + 1}/${urls.length}] ${url}`);
   try {
     const page = await fetchPageText(url);
 
@@ -40,20 +38,29 @@ for (let i = 0; i < urls.length; i++) {
 
     if (id) {
       await embedAndUpsert(id, record);
-      console.log(`  Saved & embedded: ${id}`);
-      saved++;
+      console.log(`  [${index + 1}] Saved & embedded: ${id}`);
+      return "saved";
     } else {
-      console.log(`  Skipped`);
-      skipped++;
+      console.log(`  [${index + 1}] Skipped`);
+      return "skipped";
     }
   } catch (err) {
-    console.error(`  Failed: ${err.message}`);
-    failed++;
+    console.error(`  [${index + 1}] Failed: ${err.message}`);
+    return "failed";
   }
+}
 
-  // 2-second pause between requests to avoid rate limits
-  if (i < urls.length - 1) {
-    await new Promise((r) => setTimeout(r, 2000));
+let saved = 0, skipped = 0, failed = 0;
+
+for (let i = 0; i < urls.length; i += CONCURRENCY) {
+  const batch = urls.slice(i, i + CONCURRENCY);
+  const results = await Promise.all(
+    batch.map((url, j) => processUrl(url, i + j))
+  );
+  for (const r of results) {
+    if (r === "saved") saved++;
+    else if (r === "skipped") skipped++;
+    else failed++;
   }
 }
 

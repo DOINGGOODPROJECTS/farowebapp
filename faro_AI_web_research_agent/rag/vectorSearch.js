@@ -5,13 +5,15 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, "../.env.local") });
 dotenv.config({ path: join(__dirname, "../.env") });
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Ollama OpenAI-compatible client for embeddings
+const openai = new OpenAI({ baseURL: "http://localhost:11434/v1", apiKey: "ollama" });
 const qdrant = new QdrantClient({ url: process.env.QDRANT_URL || "http://localhost:6333" });
 
 const COLLECTION  = process.env.QDRANT_COLLECTION || "faro_records";
-const EMBED_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+const EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL || "nomic-embed-text";
 
 /**
  * Semantic search against the Qdrant collection.

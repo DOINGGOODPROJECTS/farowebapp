@@ -1,10 +1,21 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import { z } from "zod";
+import { fileURLToPath } from "url";
+import path from "path";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, ".env.local") });
 dotenv.config();
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const useHermes = process.env.USE_HERMES === "true";
+
+const client = useHermes
+  ? new OpenAI({
+      baseURL: "http://localhost:11434/v1",
+      apiKey:  "ollama",
+    })
+  : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const RecordSchema = z.object({
   category: z.enum([
@@ -28,12 +39,30 @@ const RecordSchema = z.object({
   status:           z.enum(["active", "expired", "needs_review", "rejected"]),
 });
 
+const VALID_CATEGORIES = [
+  "city_economic_data",
+  "business_ecosystem",
+  "grants_funding",
+  "policy_incentives",
+  "cost_relocation_data",
+];
+
 function cleanJson(raw) {
   return raw
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+}
+
+function sanitize(obj) {
+  if (!VALID_CATEGORIES.includes(obj.category)) {
+    obj.category = "city_economic_data";
+    obj.status = "needs_review";
+    if (obj.confidence_score > 60) obj.confidence_score = 60;
+    obj.confidence_level = "low";
+  }
+  return obj;
 }
 
 export async function extractRecordFromText({ pageTitle, text, sourceUrl }) {
@@ -92,8 +121,12 @@ Page text:
 ${text}
 `.trim();
 
+  const model = useHermes
+    ? (process.env.HERMES_MODEL || "hermes3:3b")
+    : (process.env.OPENAI_MODEL  || "gpt-4o-mini");
+
   const response = await client.chat.completions.create({
-    model:    process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -106,5 +139,5 @@ ${text}
     throw new Error(`AI returned non-JSON: ${raw.slice(0, 200)}`);
   }
 
-  return RecordSchema.parse(parsed);
+  return RecordSchema.parse(sanitize(parsed));
 }

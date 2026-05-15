@@ -1,0 +1,222 @@
+[
+  {
+    "city": "Atlanta",
+    "state": "Georgia",
+    "censusSlug": "atlantacitygeorgia",
+    "govUrl": "https://www.atlantaga.gov/government/departments/economic-development",
+    "stateGovUrl": "https://www.georgia.org/competitivereasons/tax-credits-incentives",
+    "chamberUrl": "https://www.metroatlantachamber.com/",
+    "ecosystemUrl": "https://investatlanta.com/businesses/resources-incentives",
+    "grantUrl": "https://investatlanta.com/businesses/resources-incentives",
+    "numbeoCity": "Atlanta"
+  },
+  {
+    "city": "Houston",
+    "state": "Texas",
+    "censusSlug": "houstoncitytexas",
+    "govUrl": "https://www.houstontx.gov/economicdevelopment/",
+    "stateGovUrl": "https://gov.texas.gov/business/page/economic-development",
+    "chamberUrl": "https://www.houston.org/economic-development/",
+    "ecosystemUrl": "https://www.houston.org/economic-development/",
+    "grantUrl": "https://www.houstontx.gov/economicdevelopment/",
+    "numbeoCity": "Houston"
+  },
+  {
+    "city": "Dallas",
+    "state": "Texas",
+    "censusSlug": "dallascitytexas",
+    "govUrl": "https://dallascityhall.com/departments/economic-development/pages/default.aspx",
+    "stateGovUrl": "https://gov.texas.gov/business/page/economic-development",
+    "chamberUrl": "https://www.dallaschamber.org/",
+    "ecosystemUrl": "https://dallasentrepreneurship.com/resources",
+    "grantUrl": "https://dallascityhall.com/departments/economic-development/pages/default.aspx",
+    "numbeoCity": "Dallas"
+  },
+  {
+    "city": "Charlotte",
+    "state": "North Carolina",
+    "censusSlug": "charlottecitynorthcarolina",
+    "govUrl": "https://charlottenc.gov/ED/Pages/default.aspx",
+    "stateGovUrl": "https://www.nccommerce.com/business-services/incentives-financing-programs",
+    "chamberUrl": "https://www.charlotteregion.com/",
+    "ecosystemUrl": "https://charlottenc.gov/ED/Pages/default.aspx",
+    "grantUrl": "https://charlottenc.gov/ED/Pages/default.aspx",
+    "numbeoCity": "Charlotte"
+  },
+  {
+    "city": "Raleigh",
+    "state": "North Carolina",
+    "censusSlug": "raleighcitynorthcarolina",
+    "govUrl": "https://raleighnc.gov/business",
+    "stateGovUrl": "https://www.nccommerce.com/business-services/incentives-financing-programs",
+    "chamberUrl": "https://www.raleighchamber.org/",
+    "ecosystemUrl": "https://www.raleighchamber.org/economic-development/",
+    "grantUrl": "https://raleighnc.gov/business",
+    "numbeoCity": "Raleigh"
+  },
+  {
+    "city": "Durham",
+    "state": "North Carolina",
+    "censusSlug": "durhamcitynorthcarolina",
+    "govUrl": "https://durhamnc.gov/3584/Economic-Development",
+    "stateGovUrl": "https://www.nccommerce.com/business-services/incentives-financing-programs",
+    "chamberUrl": "https://www.durhamchamber.org/",
+    "ecosystemUrl": "https://www.durhamncbusiness.com/",
+    "grantUrl": "https://durhamnc.gov/3584/Economic-Development",
+    "numbeoCity": "Durham"
+  },
+  {
+    "city": "Memphis",
+    "state": "Tennessee",
+    "censusSlug": "memphiscitytennessee",
+    "govUrl": "https://www.memphistn.gov/government/business-development/",
+    "stateGovUrl": "https://www.tn.gov/ecd/incentives-and-tools.html",
+    "chamberUrl": "https://www.memphischamber.com/",
+    "ecosystemUrl": "https://www.memphischamber.com/economic-development/",
+    "grantUrl": "https://www.memphistn.gov/government/business-development/",
+    "numbeoCity": "Memphis"
+  },
+  {
+    "city": "Washington",
+    "state": "District of Columbia",
+    "censusSlug": "washingtoncitydistrictofcolumbia",
+    "govUrl": "https://dcbiz.dc.gov/",
+    "stateGovUrl": "https://dslbd.dc.gov/service/grants-and-incentives",
+    "chamberUrl": "https://www.dcchamber.org/",
+    "ecosystemUrl": "https://dcbiz.dc.gov/",
+    "grantUrl": "https://dslbd.dc.gov/service/grants-and-incentives",
+    "numbeoCity": "Washington"
+  },
+  {
+    "city": "Chicago",
+    "state": "Illinois",
+    "censusSlug": "chicagocityillinois",
+    "govUrl": "https://www.chicago.gov/city/en/depts/dcd/supp_info/small-business-center.html",
+    "stateGovUrl": "https://dceo.illinois.gov/smallbizassistance.html",
+    "chamberUrl": "https://www.chicagochamber.org/",
+    "ecosystemUrl": "https://www.chicago.gov/city/en/depts/dcd/supp_info/small-business-center.html",
+    "grantUrl": "https://www.chicago.gov/city/en/depts/dcd/supp_info/community_development_grantprograms.html",
+    "numbeoCity": "Chicago"
+  },
+  {
+    "city": "Detroit",
+    "state": "Michigan",
+    "censusSlug": "detroitcitymichigan",
+    "govUrl": "https://www.degc.org/business-assistance/",
+    "stateGovUrl": "https://www.michigan.gov/medc/business-development/incentives",
+    "chamberUrl": "https://www.detroitchamber.com/",
+    "ecosystemUrl": "https://www.detroitmi.gov/government/departments/planning-development-department",
+    "grantUrl": "https://www.degc.org/business-assistance/",
+    "numbeoCity": "Detroit"
+  },
+  {
+    "city": "Columbus",
+    "state": "Ohio",
+    "censusSlug": "columbuscityohio",
+    "govUrl": "https://www.columbus.gov/development/",
+    "stateGovUrl": "https://development.ohio.gov/business/business-incentives",
+    "chamberUrl": "https://www.columbus.org/",
+    "ecosystemUrl": "https://columbusregion.com/why-columbus/competitive-advantages/",
+    "grantUrl": "https://www.columbus.gov/development/",
+    "numbeoCity": "Columbus"
+  },
+  {
+    "city": "Minneapolis",
+    "state": "Minnesota",
+    "censusSlug": "minneapoliscityminnesota",
+    "govUrl": "https://www2.minneapolismn.gov/business-services/financial-resources/",
+    "stateGovUrl": "https://mn.gov/deed/business/",
+    "chamberUrl": "https://www.minneapolischamber.org/",
+    "ecosystemUrl": "https://www2.minneapolismn.gov/business-services/financial-resources/",
+    "grantUrl": "https://www2.minneapolismn.gov/business-services/financial-resources/",
+    "numbeoCity": "Minneapolis"
+  },
+  {
+    "city": "St. Louis",
+    "state": "Missouri",
+    "censusSlug": "stlouiscitymissouri",
+    "govUrl": "https://www.stlouis-mo.gov/government/departments/development/",
+    "stateGovUrl": "https://ded.mo.gov/content/business-incentives",
+    "chamberUrl": "https://www.stlchamber.com/",
+    "ecosystemUrl": "https://www.stlouis-mo.gov/government/departments/development/",
+    "grantUrl": "https://www.stlpartnership.com/locate/incentives/",
+    "numbeoCity": "St.+Louis"
+  },
+  {
+    "city": "Baltimore",
+    "state": "Maryland",
+    "censusSlug": "baltimorecitymaryland",
+    "govUrl": "https://baltimoredevelopment.com/",
+    "stateGovUrl": "https://dhcd.maryland.gov/Business/Pages/default.aspx",
+    "chamberUrl": "https://www.baltimorechamber.org/",
+    "ecosystemUrl": "https://baltimoredevelopment.com/",
+    "grantUrl": "https://baltimoredevelopment.com/financing/",
+    "numbeoCity": "Baltimore"
+  },
+  {
+    "city": "Philadelphia",
+    "state": "Pennsylvania",
+    "censusSlug": "philadelphiacitypennsylvania",
+    "govUrl": "https://business.phila.gov/",
+    "stateGovUrl": "https://dced.pa.gov/business-assistance/",
+    "chamberUrl": "https://www.chamberphiladelphia.org/",
+    "ecosystemUrl": "https://business.phila.gov/",
+    "grantUrl": "https://business.phila.gov/funding/",
+    "numbeoCity": "Philadelphia"
+  },
+  {
+    "city": "Miami",
+    "state": "Florida",
+    "censusSlug": "miamicityflorida",
+    "govUrl": "https://www.miamigov.com/Business",
+    "stateGovUrl": "https://www.enterpriseflorida.com/business-climate/incentives/",
+    "chamberUrl": "https://www.miamichamber.com/",
+    "ecosystemUrl": "https://www.miamigov.com/Business",
+    "grantUrl": "https://www.miamigov.com/Business",
+    "numbeoCity": "Miami"
+  },
+  {
+    "city": "New Orleans",
+    "state": "Louisiana",
+    "censusSlug": "neworleanscitylouisiana",
+    "govUrl": "https://www.nola.gov/mayor/initiatives/economic-development/",
+    "stateGovUrl": "https://www.opportunitylouisiana.com/business-resources",
+    "chamberUrl": "https://www.nolachamber.org/",
+    "ecosystemUrl": "https://www.nola.gov/mayor/initiatives/economic-development/",
+    "grantUrl": "https://www.nola.gov/mayor/initiatives/economic-development/",
+    "numbeoCity": "New+Orleans"
+  },
+  {
+    "city": "Birmingham",
+    "state": "Alabama",
+    "censusSlug": "birminghamcityalabama",
+    "govUrl": "https://www.birminghamal.gov/departments/economic-development/",
+    "stateGovUrl": "https://www.madeinalabama.com/business-resources/incentives/",
+    "chamberUrl": "https://www.birminghambusinessalliance.com/",
+    "ecosystemUrl": "https://www.birminghamal.gov/departments/economic-development/",
+    "grantUrl": "https://www.birminghamal.gov/departments/economic-development/",
+    "numbeoCity": "Birmingham"
+  },
+  {
+    "city": "Richmond",
+    "state": "Virginia",
+    "censusSlug": "richmondcityvirginia",
+    "govUrl": "https://www.rvaworks.com/",
+    "stateGovUrl": "https://www.vedp.org/incentives",
+    "chamberUrl": "https://www.grpva.com/",
+    "ecosystemUrl": "https://www.rvaworks.com/",
+    "grantUrl": "https://www.rvaworks.com/",
+    "numbeoCity": "Richmond"
+  },
+  {
+    "city": "Jacksonville",
+    "state": "Florida",
+    "censusSlug": "jacksonvillecityflorida",
+    "govUrl": "https://www.coj.net/departments/mayors-office/economic-development",
+    "stateGovUrl": "https://www.enterpriseflorida.com/business-climate/incentives/",
+    "chamberUrl": "https://www.myjaxchamber.com/",
+    "ecosystemUrl": "https://www.coj.net/departments/mayors-office/economic-development",
+    "grantUrl": "https://www.coj.net/departments/mayors-office/economic-development",
+    "numbeoCity": "Jacksonville"
+  }
+]
