@@ -225,6 +225,12 @@ export default function ChatPage() {
   const [listening, setListening] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
+  const [guestQuestionsRemaining, setGuestQuestionsRemaining] = useState<number>(() => {
+    if (typeof window === "undefined") return 2;
+    const saved = localStorage.getItem("guestQuestionsRemaining");
+    const parsed = saved !== null ? Number(saved) : NaN;
+    return Number.isFinite(parsed) ? parsed : 2;
+  });
   const [imagePasteError, setImagePasteError] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -562,6 +568,10 @@ export default function ChatPage() {
               ? { creditsUsed: payload.creditsUsed }
               : null),
         );
+        if (typeof payload?.questionsRemaining === "number") {
+          setGuestQuestionsRemaining(payload.questionsRemaining);
+          localStorage.setItem("guestQuestionsRemaining", String(payload.questionsRemaining));
+        }
         const assistantMessage: UiMessage = {
           id: crypto.randomUUID(),
           sender: "assistant",
@@ -798,7 +808,7 @@ export default function ChatPage() {
 	        )}
 	        {!user && !guestLimitReached && (
 	          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.3em] text-[#8a7d70]">
-	            Guest mode: 2 free questions. Then log in or create an account to
+	            Guest mode: {guestQuestionsRemaining} free {guestQuestionsRemaining === 1 ? "question" : "questions"}. Then log in or create an account to
 	            keep chatting.
           </p>
         )}

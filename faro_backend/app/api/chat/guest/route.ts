@@ -69,9 +69,13 @@ export async function POST(request: Request) {
 
     const assistantText = await callGemini(message, {});
 
-    guestLimitStore.set(ip, { ...entry, count: entry.count + 1 });
+    const newCount = entry.count + 1;
+    guestLimitStore.set(ip, { ...entry, count: newCount });
 
-    return NextResponse.json({ reply: assistantText });
+    return NextResponse.json({
+      reply: assistantText,
+      questionsRemaining: Math.max(0, guestQuestionLimit - newCount),
+    });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to send guest chat message', details: String(error) },
