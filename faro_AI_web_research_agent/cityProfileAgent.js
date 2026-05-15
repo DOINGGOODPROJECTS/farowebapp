@@ -97,6 +97,94 @@ async function searchDDG(query, maxResults = 3) {
   }
 }
 
+// ── Score normalizer ──────────────────────────────────────────────────────────
+// Ensures a score field is a valid integer string 1–100; defaults to 50.
+function ensureScore(val) {
+  const n = parseInt(String(val ?? ""));
+  return Number.isFinite(n) && n >= 1 && n <= 100 ? String(n) : "50";
+}
+
+const SCORE_FIELDS = [
+  "cost_index", "housing_index_score", "opportunity_score",
+  "network_strength", "business_score", "underrepresented_entrepreneurs_pct",
+];
+
+// ── Field descriptions used by the missing-field fallback ────────────────────
+const FIELD_DESCRIPTIONS = {
+  cost_of_living:                    "Cost-of-living index vs US average of 100. Include housing, grocery, utility, transport sub-indexes.",
+  cost_index:                        "Integer 0–100 affordability score (100 = cheapest). Derive from cost-of-living vs US average.",
+  housing_rent_estimates:            "Average monthly rent: studio, 1BR, 2BR in dollars. Include downtown vs suburb variation.",
+  housing_index_score:               "Integer 0–100 housing affordability (100 = most affordable). Derive from rent-to-income ratio.",
+  median_income:                     "Median household income and per capita income with Census year. Include poverty rate.",
+  employment_indicators:             "Unemployment rate (cite BLS) and top 5 employers by name with approximate headcount.",
+  industry_strengths:                "Top 5 industries with real named companies headquartered or with major presence.",
+  business_environment:              "Specific tax advantages, enterprise zones, rankings, and programs that attract business owners.",
+  minority_representation:           "Black/minority population % (Census) and minority-owned business %. Any notable rankings.",
+  underrepresented_entrepreneurs_pct:"Integer 0–100 estimated % of underrepresented (minority, women, veteran) founders among all business owners.",
+  opportunity_score:                 "Integer 0–100 overall entrepreneurial opportunity for underrepresented founders. Factor economic conditions, grants, policy, market size.",
+  incubators_accelerators:           "2–4 real incubator or accelerator names operating in the city with brief descriptions.",
+  coworking_spaces:                  "Real coworking spaces with specific names and neighborhoods.",
+  startup_hubs:                      "Primary innovation district or tech hub: name, neighborhood, and what makes it notable.",
+  mentorship_networks:               "SCORE chapter full name, local SBDC center name and location, and notable mentorship programs.",
+  network_strength:                  "Integer 0–100 density and quality of mentors, accelerators, and support orgs for underrepresented entrepreneurs.",
+  chambers_of_commerce:              "Full name and website of the primary Chamber of Commerce.",
+  black_business_organizations:      "Names of Black-focused business organizations, minority chambers, and professional networks.",
+  business_score:                    "Integer 0–100 business-friendliness for underrepresented entrepreneurs. Factor ecosystem, ease of starting, tax, support.",
+  grant_name:                        "Full name of a real grant or funding program for entrepreneurs in the city or state.",
+  funder:                            "Full legal name of the government agency, nonprofit, or foundation offering the grant.",
+  eligibility_criteria:              "Specific requirements: business size, ownership type (minority/women/veteran), industry, revenue cap.",
+  funding_amount:                    "Specific dollar range (e.g. '$5,000 to $50,000').",
+  deadline:                          "Application deadline, cycle, or 'Rolling basis'.",
+  application_link:                  "Direct URL to the grant application or program page.",
+  geographic_scope:                  "Whether grant covers city, state, multi-state, or national.",
+  target_audience:                   "Exactly who qualifies (e.g. minority-owned small businesses under 5 years, under $1M revenue).",
+  tax_incentives:                    "Real tax credit programs with specific credit amounts or rates.",
+  startup_support_programs:          "Real city and state programs supporting startups — names, what they provide, who runs them.",
+  minority_business_certifications:  "Federal SBA 8(a), WOSB, HUBZone, SDVOSB plus state MBE/WBE/DBE programs with issuing agencies.",
+  government_backed_initiatives:     "Opportunity Zone tracts, CDBG use, MBDA Business Center presence, notable city economic programs.",
+  living_expenses:                   "Monthly cost breakdown: rent + groceries + transportation + utilities with specific dollar amounts.",
+  business_setup_costs:              "LLC filing fee (exact $), registered agent ($/yr), local business license (approx $), key permits.",
+  hiring_costs:                      "State minimum wage ($/hr), average hourly pay for admin/retail/tech roles, employer payroll tax rate.",
+  utilities_and_infrastructure:      "Average monthly electricity, internet, water+gas costs. Key providers and internet quality.",
+};
+
+// ── Fill every empty field with a targeted AI knowledge call ─────────────────
+async function fillMissingFields(city, state, profile) {
+  const s = v => String(v ?? "").trim();
+
+  const missing = Object.entries(FIELD_DESCRIPTIONS)
+    .filter(([key]) => {
+      const val = s(profile[key]);
+      return !val || val === "0";
+    });
+
+  if (missing.length === 0) return;
+
+  console.log(`  [${city}] Filling ${missing.length} empty field(s) with AI knowledge...`);
+
+  const schema = Object.fromEntries(missing.map(([k, desc]) => [k, desc]));
+
+  const filled = await aiCall(`
+Using your training knowledge, provide a SPECIFIC, NON-EMPTY value for every field below for ${city}, ${state}, USA.
+
+STRICT RULES — every single field MUST have a real, specific value:
+- Use real names, real dollar amounts, real percentages — never leave a field blank.
+- Never write "N/A", "contact local", "varies by", "see website", or any vague filler.
+- For integer score fields (0–100): provide a reasonable estimate based on the city.
+- For URL fields with no known link: use the most likely official URL (e.g. city/state gov site).
+
+Return ONLY valid JSON with every key filled:
+${JSON.stringify(schema, null, 2)}
+`);
+
+  if (!filled) return;
+
+  for (const [key] of missing) {
+    const val = s(filled[key]);
+    if (val && val !== "0") profile[key] = val;
+  }
+}
+
 // ── Generic-content detector ──────────────────────────────────────────────────
 // Returns true when the extracted object contains too many vague/template phrases.
 
@@ -383,7 +471,7 @@ async function researchCity(cityData) {
 
   const s = v => String(v || "").trim();
 
-  return {
+  const profile = {
     city,
     state,
     country: "United States",
@@ -429,6 +517,16 @@ async function researchCity(cityData) {
     hiring_costs:                 s(cost.hiring_costs),
     utilities_and_infrastructure: s(cost.utilities_and_infrastructure),
   };
+
+  // Guarantee no empty columns — fill any gaps with targeted AI knowledge
+  await fillMissingFields(city, state, profile);
+
+  // Ensure all score fields are valid integers 1–100
+  for (const field of SCORE_FIELDS) {
+    profile[field] = ensureScore(profile[field]);
+  }
+
+  return profile;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
