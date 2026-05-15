@@ -15,10 +15,10 @@ const ALL_TECH_FOLDER_ID = process.env.GOOGLE_FOLDER_ID || "1AygChtmflL2X4P-_Q_W
 const GROUP_ROW = [
   // CORE (17 cols)
   "CORE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-  // CITY ECONOMIC DATA (7 cols)
-  "CITY ECONOMIC DATA", "", "", "", "", "", "",
-  // BUSINESS ECOSYSTEM (6 cols)
-  "BUSINESS ECOSYSTEM", "", "", "", "", "",
+  // CITY ECONOMIC DATA (11 cols)
+  "CITY ECONOMIC DATA", "", "", "", "", "", "", "", "", "", "",
+  // BUSINESS ECOSYSTEM (8 cols)
+  "BUSINESS ECOSYSTEM", "", "", "", "", "", "", "",
   // GRANTS & FUNDING (8 cols)
   "GRANTS & FUNDING", "", "", "", "", "", "", "",
   // POLICY INCENTIVES (4 cols)
@@ -34,12 +34,16 @@ const HEADER_ROW = [
   "Confidence Level", "Status", "Date Fetched", "Last Verified",
   "Created At", "Updated At",
   // CITY ECONOMIC DATA
-  "Cost of Living", "Housing & Rent Estimates", "Median Income",
+  "Cost of Living", "Cost Index (0-100)", "Housing & Rent Estimates",
+  "Housing Index Score (0-100)", "Median Income",
   "Employment Indicators", "Industry Strengths", "Business Environment",
-  "Minority Representation (%)",
+  "Minority Representation (%)", "Underrepresented Entrepreneurs (%)",
+  "Opportunity Score (0-100)",
   // BUSINESS ECOSYSTEM
   "Incubators & Accelerators", "Coworking Spaces", "Startup Hubs",
-  "Mentorship Networks", "Chambers of Commerce", "Black Business Organizations",
+  "Mentorship Networks", "Network Strength (0-100)",
+  "Chambers of Commerce", "Black Business Organizations",
+  "Business Score (0-100)",
   // GRANTS & FUNDING
   "Grant Name", "Funder", "Eligibility Criteria", "Funding Amount",
   "Deadline", "Application Link", "Geographic Scope", "Target Audience",
@@ -64,21 +68,27 @@ function flattenData(data = {}) {
     stringify(d.demographics?.minority_representation);
 
   return [
-    // city_economic_data
+    // city_economic_data (11 cols)
     stringify(d.cost_of_living),
+    stringify(d.cost_index),
     stringify(d.housing_rent_estimates),
+    stringify(d.housing_index_score),
     stringify(d.median_income),
     stringify(d.employment_indicators),
     stringify(d.industry_strengths),
     stringify(d.business_environment),
     minority,
-    // business_ecosystem
+    stringify(d.underrepresented_entrepreneurs_pct),
+    stringify(d.opportunity_score),
+    // business_ecosystem (8 cols)
     stringify(d.incubators_accelerators),
     stringify(d.coworking_spaces),
     stringify(d.startup_hubs),
     stringify(d.mentorship_networks),
+    stringify(d.network_strength),
     stringify(d.chambers_of_commerce),
     stringify(d.black_business_organizations),
+    stringify(d.business_score),
     // grants_funding
     stringify(d.grant_name),
     stringify(d.funder),
@@ -242,10 +252,10 @@ export async function getSheetRows() {
   return rows
     .map((row, i) => {
       const city = (row[4] || "").trim();   // Column E = City (0-based index 4)
-      // Data columns: indices 17–45 (29 columns across all 5 categories)
-      const dataCols = row.slice(17, 46);
+      // Data columns: indices 17–51 (35 columns across all 5 categories)
+      const dataCols = row.slice(17, 52);
       const isComplete =
-        dataCols.length === 29 &&
+        dataCols.length === 35 &&
         dataCols.every(v => v && String(v).trim().length > 0);
       return {
         city,
@@ -284,19 +294,28 @@ export async function updateCityProfileRow(rowNumber, profile) {
     "Multiple Public Sources (Census, SBA, City Gov, Chamber)",
     85, "high", "active",
     now, now, now, now,
+    // CITY ECONOMIC DATA (11 cols)
     s(profile.cost_of_living),
+    s(profile.cost_index),
     s(profile.housing_rent_estimates),
+    s(profile.housing_index_score),
     s(profile.median_income),
     s(profile.employment_indicators),
     s(profile.industry_strengths),
     s(profile.business_environment),
     s(profile.minority_representation),
+    s(profile.underrepresented_entrepreneurs_pct),
+    s(profile.opportunity_score),
+    // BUSINESS ECOSYSTEM (8 cols)
     s(profile.incubators_accelerators),
     s(profile.coworking_spaces),
     s(profile.startup_hubs),
     s(profile.mentorship_networks),
+    s(profile.network_strength),
     s(profile.chambers_of_commerce),
     s(profile.black_business_organizations),
+    s(profile.business_score),
+    // GRANTS & FUNDING
     s(profile.grant_name),
     s(profile.funder),
     s(profile.eligibility_criteria),
@@ -305,10 +324,12 @@ export async function updateCityProfileRow(rowNumber, profile) {
     s(profile.application_link),
     s(profile.geographic_scope),
     s(profile.target_audience),
+    // POLICY INCENTIVES
     s(profile.tax_incentives),
     s(profile.startup_support_programs),
     s(profile.minority_business_certifications),
     s(profile.government_backed_initiatives),
+    // COST & RELOCATION DATA
     s(profile.living_expenses),
     s(profile.business_setup_costs),
     s(profile.hiring_costs),
@@ -362,22 +383,28 @@ export async function appendCityProfileRow(profile) {
     now,      // created_at
     now,      // updated_at
 
-    // ── CITY ECONOMIC DATA (7 cols) ─────────────────────────────────────────
+    // ── CITY ECONOMIC DATA (11 cols) ────────────────────────────────────────
     s(profile.cost_of_living),
+    s(profile.cost_index),
     s(profile.housing_rent_estimates),
+    s(profile.housing_index_score),
     s(profile.median_income),
     s(profile.employment_indicators),
     s(profile.industry_strengths),
     s(profile.business_environment),
     s(profile.minority_representation),
+    s(profile.underrepresented_entrepreneurs_pct),
+    s(profile.opportunity_score),
 
-    // ── BUSINESS ECOSYSTEM (6 cols) ─────────────────────────────────────────
+    // ── BUSINESS ECOSYSTEM (8 cols) ─────────────────────────────────────────
     s(profile.incubators_accelerators),
     s(profile.coworking_spaces),
     s(profile.startup_hubs),
     s(profile.mentorship_networks),
+    s(profile.network_strength),
     s(profile.chambers_of_commerce),
     s(profile.black_business_organizations),
+    s(profile.business_score),
 
     // ── GRANTS & FUNDING (8 cols) ───────────────────────────────────────────
     s(profile.grant_name),

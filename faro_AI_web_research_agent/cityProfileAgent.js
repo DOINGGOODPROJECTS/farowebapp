@@ -120,27 +120,35 @@ const FALLBACK_PROMPTS = {
   economic: (city, state) => `
 Using your training knowledge, provide ACCURATE and SPECIFIC economic data for ${city}, ${state}, USA.
 Every value must be specific to ${city} — real dollar amounts, real employer names, real percentages.
+Scores must be integers 0–100.
 Return ONLY valid JSON with exactly these keys:
 {
   "cost_of_living": "",
+  "cost_index": 0,
   "housing_rent_estimates": "",
+  "housing_index_score": 0,
   "median_income": "",
   "employment_indicators": "",
   "industry_strengths": "",
   "business_environment": "",
-  "minority_representation": ""
+  "minority_representation": "",
+  "underrepresented_entrepreneurs_pct": 0,
+  "opportunity_score": 0
 }`,
 
   ecosystem: (city, state) => `
 Using your training knowledge, name REAL organizations and places in ${city}, ${state}, USA.
+Scores must be integers 0–100.
 Return ONLY valid JSON with exactly these keys:
 {
   "incubators_accelerators": "",
   "coworking_spaces": "",
   "startup_hubs": "",
   "mentorship_networks": "",
+  "network_strength": 0,
   "chambers_of_commerce": "",
-  "black_business_organizations": ""
+  "black_business_organizations": "",
+  "business_score": 0
 }`,
 
   grants: (city, state) => `
@@ -196,15 +204,20 @@ MANDATORY RULES — violations make the data useless:
 4. Never write vague phrases like "contact agencies", "varies by area", "see website".
 5. Use the web text below; where it lacks detail, use your knowledge of ${city}.
 
-Return ONLY valid JSON — no markdown, no commentary:
+Return ONLY valid JSON — no markdown, no commentary.
+All score fields must be integers 0–100:
 {
   "cost_of_living": "Exact cost-of-living index for ${city} vs US average (100). Include housing, grocery, utility, and transport sub-indexes with numbers.",
+  "cost_index": "Integer 0–100 scoring overall affordability for entrepreneurs (100 = most affordable). Derive from cost-of-living index relative to US average.",
   "housing_rent_estimates": "Average rent in ${city}: studio, 1BR, and 2BR in dollars per month. Include neighborhood variation (e.g. downtown vs suburbs).",
+  "housing_index_score": "Integer 0–100 scoring housing affordability in ${city} (100 = most affordable). Derive from median rent vs median income ratio.",
   "median_income": "Median household income and per capita income for ${city} (cite Census year). Include poverty rate.",
   "employment_indicators": "Unemployment rate for ${city} metro area (cite BLS). Top 5 employers in ${city} by name with headcount.",
   "industry_strengths": "Top 5 industries in ${city}. Name real companies headquartered or with major presence there.",
   "business_environment": "Specific tax advantages, enterprise zones, rankings, and city/state programs that make ${city} attractive to business owners.",
-  "minority_representation": "Black/minority percentage of ${city} population (Census). Percentage of minority-owned businesses. Any notable rankings."
+  "minority_representation": "Black/minority percentage of ${city} population (Census). Percentage of minority-owned businesses. Any notable rankings.",
+  "underrepresented_entrepreneurs_pct": "Integer 0–100 representing the estimated percentage of underrepresented (minority, women, veteran) entrepreneurs among all business owners in ${city}.",
+  "opportunity_score": "Integer 0–100 scoring overall entrepreneurial opportunity in ${city} for underrepresented founders. Factor in economic conditions, grants access, policy support, and market size."
 }
 
 Web research text for ${city}, ${state}:
@@ -224,14 +237,16 @@ MANDATORY RULES:
 2. No placeholders — every entry must be a real, named entity in ${city}.
 3. Use the text below; where it lacks specifics, use your knowledge of ${city}.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. Score fields must be integers 0–100:
 {
   "incubators_accelerators": "2–4 real incubator or accelerator program names operating in ${city} (e.g. Techstars, local university programs, city-backed programs) with a brief description of each.",
   "coworking_spaces": "Real coworking spaces in ${city} — name specific locations including any WeWork, Regus, or locally-owned spaces with their neighborhoods.",
   "startup_hubs": "Name of the primary innovation district or tech hub in ${city}, its location/neighborhood, and what makes it notable.",
   "mentorship_networks": "Full name of the SCORE chapter serving ${city}, the local SBDC center name and location, and any notable local mentorship programs.",
+  "network_strength": "Integer 0–100 scoring the density and quality of mentors, accelerators, and support organizations available to underrepresented entrepreneurs in ${city}.",
   "chambers_of_commerce": "Full name and website of the primary Chamber of Commerce for ${city}.",
-  "black_business_organizations": "Names of Black-focused business organizations, minority chambers, and professional networks active in ${city}."
+  "black_business_organizations": "Names of Black-focused business organizations, minority chambers, and professional networks active in ${city}.",
+  "business_score": "Integer 0–100 scoring how business-friendly ${city} is for underrepresented entrepreneurs. Factor in ecosystem density, ease of starting a business, tax environment, and support programs."
 }
 
 Web research text for ${city}, ${state}:
@@ -374,20 +389,26 @@ async function researchCity(cityData) {
     country: "United States",
     primarySourceUrl: govUrl || censusUrl,
 
-    cost_of_living:           s(economic.cost_of_living),
-    housing_rent_estimates:   s(economic.housing_rent_estimates),
-    median_income:            s(economic.median_income),
-    employment_indicators:    s(economic.employment_indicators),
-    industry_strengths:       s(economic.industry_strengths),
-    business_environment:     s(economic.business_environment),
-    minority_representation:  s(economic.minority_representation),
+    cost_of_living:                    s(economic.cost_of_living),
+    cost_index:                        s(economic.cost_index),
+    housing_rent_estimates:            s(economic.housing_rent_estimates),
+    housing_index_score:               s(economic.housing_index_score),
+    median_income:                     s(economic.median_income),
+    employment_indicators:             s(economic.employment_indicators),
+    industry_strengths:                s(economic.industry_strengths),
+    business_environment:              s(economic.business_environment),
+    minority_representation:           s(economic.minority_representation),
+    underrepresented_entrepreneurs_pct: s(economic.underrepresented_entrepreneurs_pct),
+    opportunity_score:                 s(economic.opportunity_score),
 
     incubators_accelerators:      s(ecosystem.incubators_accelerators),
     coworking_spaces:             s(ecosystem.coworking_spaces),
     startup_hubs:                 s(ecosystem.startup_hubs),
     mentorship_networks:          s(ecosystem.mentorship_networks),
+    network_strength:             s(ecosystem.network_strength),
     chambers_of_commerce:         s(ecosystem.chambers_of_commerce),
     black_business_organizations: s(ecosystem.black_business_organizations),
+    business_score:               s(ecosystem.business_score),
 
     grant_name:           s(grants.grant_name),
     funder:               s(grants.funder),
