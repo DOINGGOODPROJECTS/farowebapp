@@ -13,8 +13,8 @@ const ALL_TECH_FOLDER_ID = process.env.GOOGLE_FOLDER_ID || "1AygChtmflL2X4P-_Q_W
 
 // ── Column definitions in order (must match Excel layout)
 const GROUP_ROW = [
-  // CORE (17 cols)
-  "CORE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+  // CORE (16 cols)
+  "CORE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
   // CITY ECONOMIC DATA (11 cols)
   "CITY ECONOMIC DATA", "", "", "", "", "", "", "", "", "", "",
   // BUSINESS ECOSYSTEM (8 cols)
@@ -29,7 +29,7 @@ const GROUP_ROW = [
 
 const HEADER_ROW = [
   // CORE
-  "ID", "Category", "Title", "Location", "City", "State", "Country",
+  "ID", "Title", "Location", "City", "State", "Country",
   "Description", "Source URL", "Source Name", "Confidence Score",
   "Confidence Level", "Status", "Date Fetched", "Last Verified",
   "Created At", "Updated At",
@@ -197,7 +197,6 @@ export async function appendRowToSheet(id, record) {
   const now = new Date().toISOString();
   const coreFields = [
     id,
-    record.category,
     record.title,
     record.location       ?? "",
     record.city           ?? "",
@@ -251,9 +250,9 @@ export async function getSheetRows() {
 
   return rows
     .map((row, i) => {
-      const city = (row[4] || "").trim();   // Column E = City (0-based index 4)
-      // Data columns: indices 17–51 (35 columns across all 5 categories)
-      const dataCols = row.slice(17, 52);
+      const city = (row[3] || "").trim();   // Column D = City (0-based index 3)
+      // Data columns: indices 16–50 (35 columns across all 5 categories)
+      const dataCols = row.slice(16, 51);
       const isComplete =
         dataCols.length === 35 &&
         dataCols.every(v => v && String(v).trim().length > 0);
@@ -283,7 +282,6 @@ export async function updateCityProfileRow(rowNumber, profile) {
 
   const row = [
     id,
-    "city_profile",
     `${profile.city}, ${profile.state} — Comprehensive City Profile`,
     `${profile.city}, ${profile.state}`,
     profile.city,
@@ -366,7 +364,6 @@ export async function appendCityProfileRow(profile) {
   const row = [
     // ── CORE (17 cols) ──────────────────────────────────────────────────────
     id,
-    "city_profile",
     `${profile.city}, ${profile.state} — Comprehensive City Profile`,
     `${profile.city}, ${profile.state}`,
     profile.city,

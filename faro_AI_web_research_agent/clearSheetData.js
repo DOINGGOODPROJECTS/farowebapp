@@ -23,8 +23,8 @@ if (!spreadsheetId) {
 }
 
 const GROUP_ROW = [
-  // CORE (17 cols)
-  "CORE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+  // CORE (16 cols)
+  "CORE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
   // CITY ECONOMIC DATA (11 cols)
   "CITY ECONOMIC DATA", "", "", "", "", "", "", "", "", "", "",
   // BUSINESS ECOSYSTEM (8 cols)
@@ -39,7 +39,7 @@ const GROUP_ROW = [
 
 const HEADER_ROW = [
   // CORE
-  "ID", "Category", "Title", "Location", "City", "State", "Country",
+  "ID", "Title", "Location", "City", "State", "Country",
   "Description", "Source URL", "Source Name", "Confidence Score",
   "Confidence Level", "Status", "Date Fetched", "Last Verified",
   "Created At", "Updated At",
