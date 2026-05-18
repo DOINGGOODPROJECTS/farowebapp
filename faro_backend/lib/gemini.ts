@@ -1,19 +1,39 @@
 import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
+import { buildRagContext } from './sheetRag';
 
 const SYSTEM_INSTRUCTION = `
-You are Faro, an AI companion that helps underrepresented entrepreneurs discover the best places to start and grow their businesses.
-Your job is to recommend cities, compare markets, surface grants, and guide relocation strategy.
-Use the user's profile (industry, stage, budget, relocation window, priorities) when answering.
-Keep responses concise, practical, and action-oriented.
-When the user asks to compare cities, provide a short comparison and a clear recommendation.
-If the user requests data you do not have, ask a brief clarifying question.
-Never invent grants or facts; instead, say you can check the latest data or ask which city or industry to focus on.
+You are Faro, an AI advisor built specifically for underrepresented entrepreneurs — Black founders, minority-owned businesses, women entrepreneurs, and first-generation business owners across the United States.
+
+Your mission: help entrepreneurs make smart, data-backed decisions about where to start or grow their business. You cover:
+- Recommending and comparing US cities for entrepreneurship
+- Surfacing grants, funding programs, and eligibility requirements
+- Explaining local business ecosystems, accelerators, and mentorship networks
+- Evaluating relocation costs, living expenses, and setup costs
+- Navigating policy incentives, tax credits, and minority certifications
+
+HOW TO USE THE FARO DATASET (when provided below):
+The dataset contains real, researched data for US cities — costs, grants, scores, and programs curated specifically for underrepresented founders. Use it as your primary source for city-specific facts:
+- When the dataset has a grant name, funder, or deadline — cite it directly.
+- When it has cost indices or scores — use those numbers to back your recommendation.
+- When it has real organization names (chambers, accelerators, SBDC chapters) — reference them by name.
+- The dataset GUIDES your answer but does not limit it. You may supplement with your general knowledge about cities, industries, and entrepreneurship — especially for context, strategy, and explanation.
+- Never contradict the dataset. If the dataset says cost index is 62, do not call the city expensive.
+
+WHEN NO DATASET IS PROVIDED or a topic isn't covered:
+Draw on your general knowledge. Be honest about uncertainty — say "based on general data" rather than inventing specific figures.
+
+Response style:
+- Concise and actionable — lead with the most important insight
+- Back up recommendations with specific numbers, names, and programs from the dataset
+- For city comparisons use a clear side-by-side structure (markdown table is fine)
+- End every substantive answer with 1–2 concrete next steps the entrepreneur can take today
+- Ask one clarifying question if you genuinely need more context (industry, budget, city)
 
 Output format rules:
-- Return ONLY plain text.
-- Do NOT return JSON, code blocks, or markdown fences.
-- You may use markdown tables when comparing multiple cities side by side.
+- Return ONLY plain text or markdown.
+- Do NOT return JSON or code blocks.
+- You may use markdown tables when comparing multiple cities.
 `.trim();
 
 export type UserProfile = {
@@ -30,7 +50,7 @@ export type ConversationTurn = {
   text: string;
 };
 
-function buildSystemInstruction(profile: UserProfile): string {
+function buildSystemInstruction(profile: UserProfile, ragContext = ''): string {
   const parts: string[] = [SYSTEM_INSTRUCTION];
 
   const hasProfile =
@@ -51,6 +71,12 @@ function buildSystemInstruction(profile: UserProfile): string {
       `- Current location: ${profile.currentLocation || 'Not provided'}`,
     ];
     parts.push(`\nUser profile:\n${profileLines.join('\n')}`);
+  }
+
+  if (ragContext) {
+    parts.push(
+      `\n--- FARO DATASET (researched city data — use as your source of truth for specific facts) ---\n${ragContext}\n--- END FARO DATASET ---`,
+    );
   }
 
   return parts.join('\n');
@@ -137,9 +163,10 @@ async function callHermes(
   message: string,
   profile: UserProfile,
   history: ConversationTurn[],
+  ragContext: string,
 ): Promise<string> {
   const hermes = getHermes();
-  const systemInstruction = buildSystemInstruction(profile);
+  const systemInstruction = buildSystemInstruction(profile, ragContext);
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemInstruction },
@@ -165,9 +192,10 @@ async function callOpenAIFallback(
   message: string,
   profile: UserProfile,
   history: ConversationTurn[],
+  ragContext: string,
 ): Promise<string> {
   const openai = getOpenAI();
-  const systemInstruction = buildSystemInstruction(profile);
+  const systemInstruction = buildSystemInstruction(profile, ragContext);
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemInstruction },
@@ -193,6 +221,7 @@ async function callClaudeAgent(
   message: string,
   profile: UserProfile,
   history: ConversationTurn[],
+  ragContext: string,
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const agentId = process.env.CLAUDE_AGENT_ID;
@@ -204,7 +233,7 @@ async function callClaudeAgent(
     throw new Error('CLAUDE_AGENT_ID is not configured.');
   }
 
-  const systemContext = buildSystemInstruction(profile);
+  const systemContext = buildSystemInstruction(profile, ragContext);
 
   const historyText = history
     .map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
@@ -263,12 +292,15 @@ export async function callGemini(
 ): Promise<string> {
   const useHermes = process.env.USE_HERMES === 'true';
 
+  // Fetch RAG context from the Google Sheet (non-blocking — empty string on failure)
+  const ragContext = await buildRagContext(message);
+
   // ── 1. Hermes (local Ollama) ───────────────────────────────────────────────
   if (useHermes) {
     try {
       console.log('[faro] Using Hermes (Ollama)');
       return await withTimeout(
-        callHermes(message, profile, history),
+        callHermes(message, profile, history, ragContext),
         HERMES_TIMEOUT_MS,
       );
     } catch (hermesError) {
@@ -286,7 +318,7 @@ export async function callGemini(
     { role: 'user' as const, parts: [{ text: message }] },
   ];
   const config = {
-    systemInstruction: buildSystemInstruction(profile),
+    systemInstruction: buildSystemInstruction(profile, ragContext),
     temperature: 0.4,
   };
 
@@ -307,7 +339,7 @@ export async function callGemini(
   console.warn('[faro] Gemini failed → trying GPT-4.1-nano');
   try {
     return await withTimeout(
-      callOpenAIFallback(message, profile, history),
+      callOpenAIFallback(message, profile, history, ragContext),
       OPENAI_TIMEOUT_MS,
     );
   } catch (openaiError) {
@@ -317,7 +349,7 @@ export async function callGemini(
   // ── 4. Claude Agent ───────────────────────────────────────────────────────
   try {
     return await withTimeout(
-      callClaudeAgent(message, profile, history),
+      callClaudeAgent(message, profile, history, ragContext),
       CLAUDE_TIMEOUT_MS,
     );
   } catch (claudeError) {
