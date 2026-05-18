@@ -230,6 +230,61 @@ export async function appendRowToSheet(id, record) {
 }
 
 /**
+ * Updates specific columns in an existing row without touching others.
+ * columnMap: { [fieldKey]: value } — only these fields are written.
+ * Uses the HEADER_ROW to find column positions by name.
+ */
+export async function updateCityRowColumns(rowNumber, columnMap) {
+  const auth   = getAuthClient();
+  const sheets = google.sheets({ version: "v4", auth });
+  const drive  = google.drive({ version: "v3", auth });
+
+  const spreadsheetId = await getOrCreateSheet(sheets, drive);
+
+  // Build field → column-index lookup from HEADER_ROW
+  const fieldToColIndex = {};
+  HEADER_ROW.forEach((header, i) => {
+    // Normalise header to a field key (lowercase, underscores)
+    const key = header
+      .toLowerCase()
+      .replace(/\s*\(.*?\)/g, "")   // strip parenthetical notes
+      .trim()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    fieldToColIndex[key] = i;
+  });
+
+  // Convert 0-based column index to A1 column letter (A, B, … Z, AA, …)
+  const colLetter = (n) => {
+    let s = "";
+    n += 1;
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  };
+
+  const data = [];
+  for (const [field, value] of Object.entries(columnMap)) {
+    const colIdx = fieldToColIndex[field];
+    if (colIdx == null) continue;
+    data.push({
+      range: `Records!${colLetter(colIdx)}${rowNumber}`,
+      values: [[value == null ? "" : String(value)]],
+    });
+  }
+
+  if (data.length === 0) return;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    resource: { valueInputOption: "RAW", data },
+  });
+}
+
+/**
  * Reads all data rows (row 3 onwards) from the sheet.
  * Returns an array of { city, rowNumber, isComplete } objects.
  * isComplete = true only when every one of the 29 data columns is non-empty.
@@ -250,7 +305,8 @@ export async function getSheetRows() {
 
   return rows
     .map((row, i) => {
-      const city = (row[3] || "").trim();   // Column D = City (0-based index 3)
+      const city  = (row[3] || "").trim();   // Column D = City (0-based index 3)
+      const state = (row[4] || "").trim();   // Column E = State (0-based index 4)
       // Data columns: indices 16–50 (35 columns across all 5 categories)
       const dataCols = row.slice(16, 51);
       const isComplete =
@@ -258,6 +314,7 @@ export async function getSheetRows() {
         dataCols.every(v => v && String(v).trim().length > 0);
       return {
         city,
+        state,
         rowNumber: i + 3,   // 1-based sheet row (first data row = row 3)
         isComplete,
       };
