@@ -16,7 +16,7 @@ const ENV_PATH = path.join(__dirname, ".env.local");
 
 const SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets",
-  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive",
 ];
 
 const oauth2Client = createOAuthClient();

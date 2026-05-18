@@ -12,6 +12,8 @@
  */
 
 import { google } from 'googleapis';
+import fs from 'fs';
+import path from 'path';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -23,9 +25,34 @@ let _profileCache: CityProfile[] | null = null;
 let _cacheExpiresAt = 0;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+const SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive',
+];
+
 // ── Google Sheets auth ────────────────────────────────────────────────────────
+// Priority: service account key file → inline JSON key → OAuth2 refresh token
 
 function getAuth() {
+  // 1. Service account key file
+  const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
+  if (keyFile) {
+    const resolved = path.isAbsolute(keyFile) ? keyFile : path.join(process.cwd(), keyFile);
+    if (fs.existsSync(resolved)) {
+      return new google.auth.GoogleAuth({ keyFile: resolved, scopes: SCOPES });
+    }
+  }
+
+  // 2. Service account key as inline JSON env var
+  const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (keyJson) {
+    try {
+      const credentials = JSON.parse(keyJson);
+      return new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
+    } catch { /* fall through */ }
+  }
+
+  // 3. OAuth2 refresh token (legacy)
   const clientId     = process.env.google_oauth;
   const clientSecret = process.env.google_secret;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
