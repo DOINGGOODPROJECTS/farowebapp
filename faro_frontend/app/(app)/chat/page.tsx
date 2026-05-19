@@ -642,7 +642,7 @@ export default function ChatPage() {
         /NetworkError|Failed to fetch/i.test(errorMessage)
           ? user
             ? `Unable to reach the chat backend (${backendUrl}). Check NEXT_PUBLIC_BACKEND_URL and that the backend is running (try ${backendUrl}/api/health).`
-            : "Unable to reach the guest chat service. If this is self-hosted, ensure the frontend is deployed with MAKE_WEBHOOK_URL (and optional MAKE_WEBHOOK_API_KEY)."
+            : `Unable to reach the guest chat service. Check that the backend is running and NEXT_PUBLIC_BACKEND_URL is set correctly (${backendUrl}).`
           : errorMessage;
       const assistantMessage: UiMessage = {
         id: crypto.randomUUID(),

@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import { buildRagContext } from './sheetRag';
 
@@ -106,18 +105,6 @@ function getHermes(): OpenAI {
   return _hermes;
 }
 
-// ── Gemini client ─────────────────────────────────────────────────────────────
-
-let _gemini: GoogleGenAI | null = null;
-function getGemini(): GoogleGenAI {
-  if (!_gemini) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
-    _gemini = new GoogleGenAI({ apiKey });
-  }
-  return _gemini;
-}
-
 // ── OpenAI client ─────────────────────────────────────────────────────────────
 
 let _openai: OpenAI | null = null;
@@ -134,28 +121,11 @@ function getOpenAI(): OpenAI {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const HERMES_MODEL      = process.env.HERMES_MODEL || 'hermes3:3b';
-const GEMINI_MODEL      = 'gemini-2.5-flash';
+const HERMES_MODEL          = process.env.HERMES_MODEL || 'hermes3:3b';
 const OPENAI_FALLBACK_MODEL = 'gpt-4.1-nano';
-const MAX_RETRIES       = 2;
-const RETRY_DELAY_MS    = 3000;
-const HERMES_TIMEOUT_MS = 120000; // 2 min — local model needs time with large context
-const GEMINI_TIMEOUT_MS = 30000;  // 30 s
-const OPENAI_TIMEOUT_MS = 20000;  // 20 s
-const CLAUDE_TIMEOUT_MS = 25000;  // 25 s
-
-function isTransient(error: unknown): boolean {
-  const msg = String(error);
-  return (
-    msg.includes('503') ||
-    msg.includes('UNAVAILABLE') ||
-    msg.includes('high demand') ||
-    msg.includes('overloaded') ||
-    msg.includes('Timeout')
-  );
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const HERMES_TIMEOUT_MS     = 60000; // 60 s — RAG context capped at 3 profiles for Hermes
+const OPENAI_TIMEOUT_MS     = 20000; // 20 s
+const CLAUDE_TIMEOUT_MS     = 25000; // 25 s
 
 // ── Provider: Hermes (local Ollama) ──────────────────────────────────────────
 
@@ -282,63 +252,29 @@ async function callClaudeAgent(
 }
 
 // ── Primary export ────────────────────────────────────────────────────────────
-// Provider order when USE_HERMES=true : Hermes → Gemini → GPT-4.1-nano → Claude
-// Provider order when USE_HERMES=false: Gemini → GPT-4.1-nano → Claude
+// Provider order: Hermes (local Ollama) → GPT-4.1-nano → Claude Agent
 
 export async function callGemini(
   message: string,
   profile: UserProfile = {},
   history: ConversationTurn[] = [],
 ): Promise<string> {
-  const useHermes = process.env.USE_HERMES === 'true';
-
   // Fetch RAG context — use compact context for Hermes (small model)
-  const ragContext     = await buildRagContext(message);
-  const ragContextSmall = await buildRagContext(message, 3); // max 3 profiles for Hermes
+  const ragContext      = await buildRagContext(message);
+  const ragContextSmall = await buildRagContext(message, 3);
 
   // ── 1. Hermes (local Ollama) ───────────────────────────────────────────────
-  if (useHermes) {
-    try {
-      console.log('[faro] Using Hermes (Ollama)');
-      return await withTimeout(
-        callHermes(message, profile, history, ragContextSmall),
-        HERMES_TIMEOUT_MS,
-      );
-    } catch (hermesError) {
-      console.warn('[faro] Hermes failed → trying Gemini', String(hermesError));
-    }
+  try {
+    console.log('[faro] Using Hermes (Ollama)');
+    return await withTimeout(
+      callHermes(message, profile, history, ragContextSmall),
+      HERMES_TIMEOUT_MS,
+    );
+  } catch (hermesError) {
+    console.warn('[faro] Hermes failed → trying GPT-4.1-nano', String(hermesError));
   }
 
-  // ── 2. Gemini ─────────────────────────────────────────────────────────────
-  const ai = getGemini();
-  const contents = [
-    ...history.map((turn) => ({
-      role: turn.role,
-      parts: [{ text: turn.text }],
-    })),
-    { role: 'user' as const, parts: [{ text: message }] },
-  ];
-  const config = {
-    systemInstruction: buildSystemInstruction(profile, ragContext),
-    temperature: 0.4,
-  };
-
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      const response = await withTimeout(
-        ai.models.generateContent({ model: GEMINI_MODEL, contents, config }),
-        GEMINI_TIMEOUT_MS,
-      );
-      return (response.text ?? '').trim();
-    } catch (error) {
-      console.warn(`[faro] Gemini attempt ${attempt + 1} failed:`, String(error));
-      if (!isTransient(error)) break;
-      if (attempt < MAX_RETRIES - 1) await sleep(RETRY_DELAY_MS);
-    }
-  }
-
-  // ── 3. GPT-4.1-nano ───────────────────────────────────────────────────────
-  console.warn('[faro] Gemini failed → trying GPT-4.1-nano');
+  // ── 2. GPT-4.1-nano ───────────────────────────────────────────────────────
   try {
     return await withTimeout(
       callOpenAIFallback(message, profile, history, ragContext),
@@ -348,7 +284,7 @@ export async function callGemini(
     console.warn('[faro] GPT-4.1-nano failed → trying Claude agent', String(openaiError));
   }
 
-  // ── 4. Claude Agent ───────────────────────────────────────────────────────
+  // ── 3. Claude Agent ───────────────────────────────────────────────────────
   try {
     return await withTimeout(
       callClaudeAgent(message, profile, history, ragContext),
