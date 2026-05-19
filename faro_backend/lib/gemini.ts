@@ -139,10 +139,10 @@ const GEMINI_MODEL      = 'gemini-2.5-flash';
 const OPENAI_FALLBACK_MODEL = 'gpt-4.1-nano';
 const MAX_RETRIES       = 2;
 const RETRY_DELAY_MS    = 3000;
-const HERMES_TIMEOUT_MS = 30000;
-const GEMINI_TIMEOUT_MS = 10000;
-const OPENAI_TIMEOUT_MS = 12000;
-const CLAUDE_TIMEOUT_MS = 15000;
+const HERMES_TIMEOUT_MS = 120000; // 2 min — local model needs time with large context
+const GEMINI_TIMEOUT_MS = 30000;  // 30 s
+const OPENAI_TIMEOUT_MS = 20000;  // 20 s
+const CLAUDE_TIMEOUT_MS = 25000;  // 25 s
 
 function isTransient(error: unknown): boolean {
   const msg = String(error);
@@ -292,15 +292,16 @@ export async function callGemini(
 ): Promise<string> {
   const useHermes = process.env.USE_HERMES === 'true';
 
-  // Fetch RAG context from the Google Sheet (non-blocking — empty string on failure)
-  const ragContext = await buildRagContext(message);
+  // Fetch RAG context — use compact context for Hermes (small model)
+  const ragContext     = await buildRagContext(message);
+  const ragContextSmall = await buildRagContext(message, 3); // max 3 profiles for Hermes
 
   // ── 1. Hermes (local Ollama) ───────────────────────────────────────────────
   if (useHermes) {
     try {
       console.log('[faro] Using Hermes (Ollama)');
       return await withTimeout(
-        callHermes(message, profile, history, ragContext),
+        callHermes(message, profile, history, ragContextSmall),
         HERMES_TIMEOUT_MS,
       );
     } catch (hermesError) {
@@ -330,6 +331,7 @@ export async function callGemini(
       );
       return (response.text ?? '').trim();
     } catch (error) {
+      console.warn(`[faro] Gemini attempt ${attempt + 1} failed:`, String(error));
       if (!isTransient(error)) break;
       if (attempt < MAX_RETRIES - 1) await sleep(RETRY_DELAY_MS);
     }

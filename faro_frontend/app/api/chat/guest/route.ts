@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // seconds — allow backend AI call to complete
 
 type GuestChatPayload = {
   message?: string;
@@ -212,6 +213,7 @@ export async function POST(request: Request) {
             ...getForwardedIpHeaders(request),
           },
           body: JSON.stringify({ message, guestId: body.guestId }),
+          signal: AbortSignal.timeout(55000), // 55s — just under maxDuration
         });
 
         const raw = await upstream.text();

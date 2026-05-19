@@ -66,49 +66,59 @@ function getAuth() {
 
 // ── Load city profiles from sheet ────────────────────────────────────────────
 
+async function fetchProfiles(): Promise<CityProfile[]> {
+  const auth          = getAuth();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+
+  if (!auth || !spreadsheetId) return [];
+
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res    = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'Records!A1:AZ',
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length < 3) return [];
+
+  const headers = rows[1];
+  return rows
+    .slice(2)
+    .map((row) => {
+      const p: CityProfile = {};
+      headers.forEach((header: string, i: number) => {
+        p[header] = (row[i] || '').trim();
+      });
+      return p;
+    })
+    .filter((p) => p['City'] && p['City'].length > 0);
+}
+
 async function loadProfiles(): Promise<CityProfile[]> {
   const now = Date.now();
   if (_profileCache && now < _cacheExpiresAt) return _profileCache;
 
-  const auth          = getAuth();
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-
-  if (!auth || !spreadsheetId) {
-    console.warn('[sheetRag] Sheet credentials not configured — RAG context disabled.');
-    return [];
+  // Try up to 2 times — DNS can fail transiently on first startup
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const profiles   = await fetchProfiles();
+      _profileCache    = profiles;
+      _cacheExpiresAt  = now + CACHE_TTL_MS;
+      console.log(`[sheetRag] Loaded ${profiles.length} city profiles from sheet.`);
+      return profiles;
+    } catch (err) {
+      const msg = String(err);
+      const isNetwork = msg.includes('EAI_AGAIN') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT');
+      if (attempt === 1 && isNetwork) {
+        await new Promise(r => setTimeout(r, 2000)); // wait 2s then retry
+        continue;
+      }
+      // Only log on final failure; return stale cache if available
+      console.warn(`[sheetRag] Sheet unavailable — RAG context skipped. (${msg.split('\n')[0]})`);
+      return _profileCache ?? [];
+    }
   }
-
-  try {
-    const sheets = google.sheets({ version: 'v4', auth });
-    const res    = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Records!A1:AZ',
-    });
-
-    const rows = res.data.values || [];
-    if (rows.length < 3) return [];
-
-    const headers = rows[1]; // row 2 = column headers
-
-    const profiles = rows
-      .slice(2) // skip group row + header row
-      .map((row) => {
-        const p: CityProfile = {};
-        headers.forEach((header: string, i: number) => {
-          p[header] = (row[i] || '').trim();
-        });
-        return p;
-      })
-      .filter((p) => p['City'] && p['City'].length > 0);
-
-    _profileCache    = profiles;
-    _cacheExpiresAt  = now + CACHE_TTL_MS;
-    console.log(`[sheetRag] Loaded ${profiles.length} city profiles from sheet.`);
-    return profiles;
-  } catch (err) {
-    console.warn('[sheetRag] Failed to load sheet data:', String(err));
-    return _profileCache ?? [];
-  }
+  return _profileCache ?? [];
 }
 
 // ── Relevance matching ────────────────────────────────────────────────────────
@@ -264,16 +274,28 @@ function buildCompactSummary(profiles: CityProfile[]): string {
 
 /**
  * Returns a context string for injection into the AI system prompt.
- * Empty string if sheet is unavailable or yields no relevant profiles.
+ * @param question   The user's message — used for relevance matching.
+ * @param maxProfiles Cap the number of profiles returned (default: unlimited).
+ *                   Pass a small number (e.g. 3) for small/local models.
  */
-export async function buildRagContext(question: string): Promise<string> {
+export async function buildRagContext(question: string, maxProfiles?: number): Promise<string> {
   try {
-    const profiles  = await loadProfiles();
+    const profiles = await loadProfiles();
     if (profiles.length === 0) return '';
 
-    const relevant  = findRelevantProfiles(question, profiles);
-    const context   = buildContext(relevant);
-    return context;
+    let relevant = findRelevantProfiles(question, profiles);
+    if (maxProfiles && relevant.length > maxProfiles) {
+      // Keep the top-N by Opportunity Score
+      relevant = [...relevant]
+        .sort((a, b) => {
+          const aScore = parseInt(a['Opportunity Score (0-100)'] || '0');
+          const bScore = parseInt(b['Opportunity Score (0-100)'] || '0');
+          return bScore - aScore;
+        })
+        .slice(0, maxProfiles);
+    }
+
+    return buildContext(relevant);
   } catch {
     return '';
   }
