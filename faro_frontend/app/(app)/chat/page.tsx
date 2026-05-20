@@ -224,12 +224,17 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [guestQuestionsRemaining, setGuestQuestionsRemaining] = useState<number>(() => {
     if (typeof window === "undefined") return 2;
     const saved = localStorage.getItem("guestQuestionsRemaining");
     const parsed = saved !== null ? Number(saved) : NaN;
     return Number.isFinite(parsed) ? parsed : 2;
+  });
+  const [guestLimitReached, setGuestLimitReached] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("guestQuestionsRemaining");
+    const remaining = saved !== null ? Number(saved) : NaN;
+    return Number.isFinite(remaining) && remaining <= 0;
   });
   const [imagePasteError, setImagePasteError] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -518,6 +523,13 @@ export default function ChatPage() {
 
     try {
       if (!user) {
+        const nextRemaining = Math.max(0, guestQuestionsRemaining - 1);
+        setGuestQuestionsRemaining(nextRemaining);
+        localStorage.setItem("guestQuestionsRemaining", String(nextRemaining));
+        if (nextRemaining <= 0) {
+          setGuestLimitReached(true);
+        }
+
         const response = await fetch(`/api/chat/guest`, {
           method: "POST",
           headers: {
@@ -569,8 +581,10 @@ export default function ChatPage() {
               : null),
         );
         if (typeof payload?.questionsRemaining === "number") {
-          setGuestQuestionsRemaining(payload.questionsRemaining);
-          localStorage.setItem("guestQuestionsRemaining", String(payload.questionsRemaining));
+          const synced = Math.min(nextRemaining, payload.questionsRemaining);
+          setGuestQuestionsRemaining(synced);
+          localStorage.setItem("guestQuestionsRemaining", String(synced));
+          if (synced <= 0) setGuestLimitReached(true);
         }
         const assistantMessage: UiMessage = {
           id: crypto.randomUUID(),

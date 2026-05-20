@@ -109,6 +109,32 @@ async function callGroq(
   return (response.choices[0]?.message?.content ?? '').trim();
 }
 
+// ── OpenAI (fallback cloud when OPENAI_API_KEY is set) ───────────────────────
+
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_TIMEOUT_MS = 20000;
+
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+  }
+  return _openai;
+}
+
+async function callOpenAI(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+): Promise<string> {
+  const client = getOpenAI();
+  const response = await client.chat.completions.create({
+    model: OPENAI_MODEL,
+    messages,
+    temperature: 0.3,
+    max_tokens: 600,
+  });
+  return (response.choices[0]?.message?.content ?? '').trim();
+}
+
 // ── Hermes (local Ollama — fallback when no Groq key) ────────────────────────
 
 const HERMES_MODEL          = process.env.HERMES_MODEL          || 'hermes3:3b';
@@ -177,7 +203,7 @@ export async function warmupHermes(): Promise<void> {
 }
 
 // ── Primary export ────────────────────────────────────────────────────────────
-// Groq (free, ~1-3s) → Hermes (local, slower on CPU)
+// Groq (free, ~1-3s) → OpenAI (cloud) → Hermes (local Ollama)
 
 export async function callGemini(
   message: string,
@@ -211,11 +237,27 @@ export async function callGemini(
         clearTimeout(timer);
       }
     } catch (err) {
-      console.warn('[faro] Groq failed → falling back to Hermes:', String(err));
+      console.warn('[faro] Groq failed → falling back to OpenAI:', String(err));
     }
   }
 
-  // ── 2. Hermes (local Ollama) ───────────────────────────────────────────────
+  // ── 2. OpenAI (cloud fallback when OPENAI_API_KEY is set) ─────────────────
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      console.log('[faro] Calling OpenAI');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+      try {
+        return await callOpenAI(openaiMessages);
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      console.warn('[faro] OpenAI failed → falling back to Hermes:', String(err));
+    }
+  }
+
+  // ── 3. Hermes (local Ollama) ───────────────────────────────────────────────
   console.log('[faro] Calling Hermes (Ollama)');
 
   const hermesMessages: HermesMessage[] = openaiMessages.map((m) => ({
