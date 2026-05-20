@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { callGemini } from '@/lib/gemini';
+import { callGemini, getInstantReply } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 
@@ -42,6 +42,17 @@ const getClientIp = (request: Request) => {
 
 export async function POST(request: Request) {
   try {
+    const body = (await request.json()) as GuestChatPayload;
+    const message = body.message?.trim();
+    if (!message) {
+      return NextResponse.json({ error: 'Message is required.' }, { status: 400 });
+    }
+
+    const instantReply = getInstantReply(message);
+    if (instantReply) {
+      return NextResponse.json({ reply: instantReply });
+    }
+
     const ip = getClientIp(request) || 'unknown';
     const now = Date.now();
     const existing = guestLimitStore.get(ip);
@@ -59,12 +70,6 @@ export async function POST(request: Request) {
           headers: { 'Retry-After': String(retryAfterSeconds) },
         },
       );
-    }
-
-    const body = (await request.json()) as GuestChatPayload;
-    const message = body.message?.trim();
-    if (!message) {
-      return NextResponse.json({ error: 'Message is required.' }, { status: 400 });
     }
 
     const assistantText = await callGemini(message, {});

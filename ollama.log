@@ -1,0 +1,7 @@
+nohup: ignoring input
+Couldn't find '/home/bright/.ollama/id_ed25519'. Generating new private key.
+Your new public key is: 
+
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJ6duy5ooGiX59l8DAvkd//Hatbk233r0jkzUdQvErz
+
+Error: listen tcp 127.0.0.1:11434: bind: address already in use

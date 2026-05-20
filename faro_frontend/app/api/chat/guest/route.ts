@@ -1,11 +1,47 @@
 import { NextResponse } from "next/server";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 210;
 
 type GuestChatPayload = {
   message?: string;
   guestId?: string;
+};
+
+const getInstantReply = (message: string): string | null => {
+  const normalized = message.toLowerCase().replace(/[^\w\s]/g, "").trim();
+  const compact = normalized.replace(/\s+/g, " ");
+
+  if (["hi", "hello", "hey", "yo", "good morning", "good afternoon", "good evening"].includes(compact)) {
+    return "Hi. Tell me your city, industry, budget, or grant question and I will help you compare options.";
+  }
+
+  if (["thanks", "thank you", "thx"].includes(compact)) {
+    return "You are welcome.";
+  }
+
+  const budgetMatch = compact.match(/\b(?:budget|budget is|with)\s*(?:is\s*)?\$?(\d[\d,]*)\b/);
+  const industryMatch = compact.match(/\bindustry\s*(?:is|:)?\s*([a-z][a-z\s-]{1,40})/);
+  const locationMatch = compact.match(/\b(?:city|state|location)\s*(?:is|:)?\s*([a-z][a-z\s-]{1,40}?)(?:\s+budget|\s+industry|$)/);
+
+  if (budgetMatch || industryMatch || locationMatch) {
+    const budget = budgetMatch?.[1] ? `$${budgetMatch[1]}` : "your current budget";
+    const industry = industryMatch?.[1]?.trim() || "your industry";
+    const location = locationMatch?.[1]?.trim() || "that market";
+    const isAlabama = /\balabama\b/.test(location);
+    const placeNote = isAlabama
+      ? "Alabama is a state, so I would compare Birmingham, Huntsville, Montgomery, and Mobile before choosing one city."
+      : `For ${location}, I would first verify startup costs, local founder programs, and whether the city has customers or partners for ${industry}.`;
+
+    return [
+      placeNote,
+      `With a ${budget} budget in ${industry}, keep the first move lean: validate demand, avoid long leases, and prioritize free support from an SBDC, chamber of commerce, or tech incubator.`,
+      "Next steps: pick 2 candidate cities, list monthly costs for each, then look for local small-business grants or incubator programs before spending on setup.",
+    ].join("\n\n");
+  }
+
+  return null;
 };
 
 const getForwardedIpHeaders = (request: Request) => {
@@ -28,7 +64,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message is required." }, { status: 400 });
     }
 
-    const backendUrl = process.env.FARO_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "";
+    const instantReply = getInstantReply(message);
+    if (instantReply) {
+      return NextResponse.json({
+        reply: instantReply,
+      });
+    }
+
+    const backendUrl = await resolveBackendUrl();
+    if (!backendUrl) {
+      return NextResponse.json(
+        {
+          error: "Unable to reach the Faro backend.",
+          details: "Backend URL is not configured.",
+        },
+        { status: 500 },
+      );
+    }
 
     try {
       const upstream = await fetch(`${backendUrl}/api/chat/guest`, {
@@ -38,7 +90,7 @@ export async function POST(request: Request) {
           ...getForwardedIpHeaders(request),
         },
         body: JSON.stringify({ message, guestId: body.guestId }),
-        signal: AbortSignal.timeout(55000),
+        signal: AbortSignal.timeout(195000),
       });
 
       const raw = await upstream.text();

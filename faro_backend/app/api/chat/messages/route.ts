@@ -113,11 +113,11 @@ export async function POST(request: Request) {
         }
       : {};
 
-    // Fetch the last 10 prior messages in this session as conversation history
+    // Keep context short; local Hermes latency grows quickly with prompt size.
     const historyRows = await query<{ role: 'USER' | 'ASSISTANT'; content: string }>(
       `SELECT role, content FROM \`ChatMessage\`
        WHERE sessionId = ? AND role IN ('USER', 'ASSISTANT')
-       ORDER BY createdAt DESC LIMIT 10`,
+       ORDER BY createdAt DESC LIMIT 6`,
       [sessionId],
     );
     const history: ConversationTurn[] = historyRows
