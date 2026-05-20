@@ -37,6 +37,9 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       DB_HOST: db
       DB_PORT: "3306"
+      HERMES_BASE_URL: http://host.docker.internal:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     expose:
       - "5100"
     ports:

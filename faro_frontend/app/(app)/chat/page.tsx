@@ -212,7 +212,7 @@ export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const user = useAuthUser();
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+  const backendUrl = "";
   const guestLimitMessage =
     "You’ve used your 2 free questions. Log in or create an account to keep going.";
   const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
@@ -641,8 +641,8 @@ export default function ChatPage() {
       const displayMessage =
         /NetworkError|Failed to fetch/i.test(errorMessage)
           ? user
-            ? `Unable to reach the chat backend (${backendUrl}). Check NEXT_PUBLIC_BACKEND_URL and that the backend is running (try ${backendUrl}/api/health).`
-            : `Unable to reach the guest chat service. Check that the backend is running and NEXT_PUBLIC_BACKEND_URL is set correctly (${backendUrl}).`
+            ? "Unable to reach the chat backend. Check that the backend service is running (/api/health)."
+            : "Unable to reach the guest chat service. Check that the backend is running."
           : errorMessage;
       const assistantMessage: UiMessage = {
         id: crypto.randomUUID(),
