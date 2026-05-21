@@ -19,6 +19,19 @@ import path from 'path';
 
 type CityProfile = Record<string, string>;
 
+export type UpdateFrequency = 'Static' | 'Always' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Yearly';
+
+export type UpdateScheduleEntry = {
+  category: string;
+  columnName: string;
+  sheetColumn: string;
+  frequency: UpdateFrequency;
+  cronExpression: string;
+  rationale: string;
+  lastUpdated: string;
+  nextDue: string;
+};
+
 // ── In-memory cache (1-hour TTL) ──────────────────────────────────────────────
 
 let _profileCache: CityProfile[] | null = null;
@@ -305,4 +318,95 @@ export async function buildRagContext(question: string, maxProfiles?: number): P
 export function invalidateRagCache(): void {
   _profileCache   = null;
   _cacheExpiresAt = 0;
+}
+
+// ── Update schedule ───────────────────────────────────────────────────────────
+
+let _scheduleCache: UpdateScheduleEntry[] | null = null;
+let _scheduleCacheExpiresAt = 0;
+
+export async function getUpdateSchedule(): Promise<UpdateScheduleEntry[]> {
+  const now = Date.now();
+  if (_scheduleCache && now < _scheduleCacheExpiresAt) return _scheduleCache;
+
+  const auth          = getAuth();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  if (!auth || !spreadsheetId) return [];
+
+  try {
+    const sheets = google.sheets({ version: 'v4', auth });
+    const res    = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'UpdateSchedule!A2:H50',
+    });
+
+    const rows = res.data.values || [];
+    const entries: UpdateScheduleEntry[] = rows
+      .filter((r) => r[0])
+      .map((r) => ({
+        category:       r[0] || '',
+        columnName:     r[1] || '',
+        sheetColumn:    r[2] || '',
+        frequency:      (r[3] || 'Monthly') as UpdateScheduleEntry['frequency'],
+        cronExpression: r[4] || '',
+        rationale:      r[5] || '',
+        lastUpdated:    r[6] || '',
+        nextDue:        r[7] || '',
+      }));
+    _scheduleCache = entries;
+    _scheduleCacheExpiresAt = now + CACHE_TTL_MS;
+    return entries;
+  } catch (err) {
+    console.warn('[sheetRag] Could not load update schedule:', String(err).split('\n')[0]);
+    return _scheduleCache ?? [];
+  }
+}
+
+/**
+ * Mark one or more rows as updated.
+ * Pass category + optional columnName to target a specific column row.
+ * If only category is passed, all rows for that category are stamped.
+ */
+export async function markCategoryUpdated(category: string, columnName?: string): Promise<void> {
+  const auth          = getAuth();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  if (!auth || !spreadsheetId) return;
+
+  const schedule = await getUpdateSchedule();
+  const matches = schedule
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) =>
+      s.category === category && (!columnName || s.columnName === columnName),
+    );
+
+  if (matches.length === 0) return;
+
+  const now    = new Date();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  for (const { s, i } of matches) {
+    const nextDue = computeNextDue(s.frequency, now);
+    const rowNum  = i + 2; // row 1 = header
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `UpdateSchedule!G${rowNum}:H${rowNum}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [[now.toISOString(), nextDue]] },
+    });
+  }
+
+  _scheduleCache = null;
+}
+
+function computeNextDue(frequency: UpdateFrequency, from: Date): string {
+  if (frequency === 'Static') return 'Never';
+  if (frequency === 'Always') return 'On next run';
+  const d = new Date(from);
+  switch (frequency) {
+    case 'Weekly':    d.setDate(d.getDate() + 7);         break;
+    case 'Monthly':   d.setMonth(d.getMonth() + 1);       break;
+    case 'Quarterly': d.setMonth(d.getMonth() + 3);       break;
+    case 'Yearly':    d.setFullYear(d.getFullYear() + 1); break;
+  }
+  return d.toISOString();
 }
