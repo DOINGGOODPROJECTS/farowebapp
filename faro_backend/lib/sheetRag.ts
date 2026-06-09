@@ -155,11 +155,13 @@ function findRelevantProfiles(question: string, profiles: CityProfile[]): CityPr
   );
   if (cityMatches.length > 0) return cityMatches.slice(0, 5);
 
-  // 2. State match
-  const stateMatches = profiles.filter(
-    (p) => p['State'] && q.includes(p['State'].toLowerCase()),
+  // 2. State or Country match (State for US, Country for Africa)
+  const regionMatches = profiles.filter(
+    (p) =>
+      (p['State']   && q.includes(p['State'].toLowerCase()))   ||
+      (p['Country'] && q.includes(p['Country'].toLowerCase())),
   );
-  if (stateMatches.length > 0) return stateMatches.slice(0, 5);
+  if (regionMatches.length > 0) return regionMatches.slice(0, 5);
 
   // 3. Comparison / "best city for X" — return all profiles (will be summarised)
   const isComparison =

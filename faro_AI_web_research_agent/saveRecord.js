@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { v4 as uuidv4 } from "uuid";
-import { isUSLocation } from "./usCities.js";
+import { isKnownLocation } from "./usCities.js";
 import { appendRowToSheet } from "./googleSheets.js";
 
 export async function saveRecord(record, rawText) {
@@ -9,8 +9,8 @@ export async function saveRecord(record, rawText) {
     return null;
   }
 
-  if (!isUSLocation(record)) {
-    console.log("  Skipped: not a valid US city/state.");
+  if (!isKnownLocation(record)) {
+    console.log("  Skipped: not a recognised US or African location.");
     return null;
   }
 
