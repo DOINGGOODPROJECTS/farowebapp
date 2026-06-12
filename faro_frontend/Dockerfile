@@ -30,7 +30,7 @@ RUN addgroup -S faro && adduser -S faro -G faro
 COPY --from=build --chown=faro:faro /app/package.json ./package.json
 COPY --from=build --chown=faro:faro /app/node_modules ./node_modules
 COPY --from=build --chown=faro:faro /app/.next ./.next
-COPY --from=build --chown=faro:faro /app/next.config.ts ./next.config.ts
+COPY --from=build --chown=faro:faro /app/next.config.js ./next.config.js
 COPY --from=build --chown=faro:faro /app/public ./public
 
 USER faro
