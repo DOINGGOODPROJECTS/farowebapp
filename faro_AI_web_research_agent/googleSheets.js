@@ -307,11 +307,27 @@ export async function getSheetRows() {
     .map((row, i) => {
       const city  = (row[3] || "").trim();   // Column D = City (0-based index 3)
       const state = (row[4] || "").trim();   // Column E = State (0-based index 4)
-      // Data columns: indices 16–50 (35 columns across all 5 categories)
-      const dataCols = row.slice(16, 51);
+      // Data columns: indices 13–47 (35 columns — CORE is now 13 cols after removing Confidence Score/Level/Status)
+      const dataCols = row.slice(13, 48);
+      // Score column indices within dataCols (0-based from index 13):
+      // cost_index=1, housing_index_score=3, underrepresented_pct=9, opportunity_score=10,
+      // network_strength=15, business_score=18
+      const SCORE_IDX = new Set([1, 3, 9, 10, 15, 18]);
+
       const isComplete =
         dataCols.length === 35 &&
-        dataCols.every(v => v && String(v).trim().length > 0);
+        dataCols.every((v, i) => {
+          const s = String(v || "").trim();
+          if (!s || s.includes("[object Object]")) return false;
+          if (SCORE_IDX.has(i)) {
+            // Score column: must be a valid integer 1-100, NOT text
+            const n = parseInt(s);
+            return Number.isFinite(n) && n >= 1 && n <= 100;
+          } else {
+            // Text column: must not be a bare number
+            return !/^\d+(\.\d+)?$/.test(s);
+          }
+        });
       return {
         city,
         state,
@@ -335,19 +351,30 @@ export async function updateCityProfileRow(rowNumber, profile) {
   const now = new Date().toISOString();
   const id  = uuidv4();
 
-  const s = (v) => (v == null ? "" : String(v).trim());
+  const s = (v) => {
+    if (v == null || v === "") return "";
+    if (Array.isArray(v)) return v.map(i => typeof i === "object" ? Object.values(i).filter(Boolean).join(" | ") : String(i)).join("; ");
+    if (typeof v === "object") return Object.entries(v).map(([k, val]) => `${k}: ${val}`).join("; ");
+    const str = String(v).trim();
+    return str === "[object Object]" ? "" : str;
+  };
+
+  const isUS    = (profile.country || "United States") === "United States";
+  const place   = isUS ? `${profile.city}, ${profile.state}` : `${profile.city}, ${profile.country}`;
+  const sources = isUS
+    ? "Multiple Public Sources (Census, SBA, City Gov, Chamber)"
+    : "Multiple Public Sources (Gov Investment Agency, Chamber of Commerce, Numbeo)";
 
   const row = [
     id,
-    `${profile.city}, ${profile.state} — Comprehensive City Profile`,
-    `${profile.city}, ${profile.state}`,
+    `${place} — Comprehensive City Profile`,
+    place,
     profile.city,
-    profile.state,
-    "United States",
-    `Comprehensive entrepreneur dataset for ${profile.city}, ${profile.state}: economic indicators, business ecosystem, grants, policy incentives, and relocation costs.`,
+    isUS ? profile.state : "",
+    profile.country || "United States",
+    `Comprehensive entrepreneur dataset for ${place}: economic indicators, business ecosystem, grants, policy incentives, and relocation costs.`,
     s(profile.primarySourceUrl),
-    "Multiple Public Sources (Census, SBA, City Gov, Chamber)",
-    85, "high", "active",
+    sources,
     now, now, now, now,
     // CITY ECONOMIC DATA (11 cols)
     s(profile.cost_of_living),
@@ -416,22 +443,31 @@ export async function appendCityProfileRow(profile) {
   const now = new Date().toISOString();
   const id  = uuidv4();
 
-  const s = (v) => (v == null ? "" : String(v).trim());
+  const s = (v) => {
+    if (v == null || v === "") return "";
+    if (Array.isArray(v)) return v.map(i => typeof i === "object" ? Object.values(i).filter(Boolean).join(" | ") : String(i)).join("; ");
+    if (typeof v === "object") return Object.entries(v).map(([k, val]) => `${k}: ${val}`).join("; ");
+    const str = String(v).trim();
+    return str === "[object Object]" ? "" : str;
+  };
+
+  const isUS    = (profile.country || "United States") === "United States";
+  const place   = isUS ? `${profile.city}, ${profile.state}` : `${profile.city}, ${profile.country}`;
+  const sources = isUS
+    ? "Multiple Public Sources (Census, SBA, City Gov, Chamber)"
+    : "Multiple Public Sources (Gov Investment Agency, Chamber of Commerce, Numbeo)";
 
   const row = [
-    // ── CORE (17 cols) ──────────────────────────────────────────────────────
+    // ── CORE (13 cols — Confidence Score/Level/Status removed) ──────────────
     id,
-    `${profile.city}, ${profile.state} — Comprehensive City Profile`,
-    `${profile.city}, ${profile.state}`,
+    `${place} — Comprehensive City Profile`,
+    place,
     profile.city,
-    profile.state,
-    "United States",
-    `Comprehensive entrepreneur dataset for ${profile.city}, ${profile.state}: economic indicators, business ecosystem, grants, policy incentives, and relocation costs.`,
+    isUS ? profile.state : "",
+    profile.country || "United States",
+    `Comprehensive entrepreneur dataset for ${place}: economic indicators, business ecosystem, grants, policy incentives, and relocation costs.`,
     s(profile.primarySourceUrl),
-    "Multiple Public Sources (Census, SBA, City Gov, Chamber)",
-    85,       // confidence_score
-    "high",   // confidence_level
-    "active", // status
+    sources,
     now,      // date_fetched
     now,      // last_verified
     now,      // created_at

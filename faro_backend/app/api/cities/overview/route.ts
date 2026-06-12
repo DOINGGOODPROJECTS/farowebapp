@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { query } from '@/lib/db';
 
 type OverviewRow = {
   cityId: string;
@@ -126,19 +127,34 @@ export async function GET(req: NextRequest) {
     }
 
     const match = matches[0] || nameMatches[0];
-    if (!match) {
-      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    if (match?.medianIncome != null) {
+      return NextResponse.json({
+        city: match.name,
+        state: match.stateCode,
+        cityId: match.cityId,
+        population: match.population,
+        medianIncome: match.medianIncome,
+        notes: match.notes,
+        populationRaw: match.populationRaw,
+        medianIncomeRaw: match.medianIncomeRaw,
+      });
     }
 
+    // Fallback: City table in database (covers African cities)
+    const dbRows = await query<{ name: string; country: string; population: number | null; medianIncome: number | null }>(
+      'SELECT name, country, population, medianIncome FROM `City` WHERE name = ? LIMIT 1',
+      [city],
+    );
+    const dbRow = dbRows[0];
+    if (!dbRow?.medianIncome) {
+      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    }
     return NextResponse.json({
-      city: match.name,
-      state: match.stateCode,
-      cityId: match.cityId,
-      population: match.population,
-      medianIncome: match.medianIncome,
-      notes: match.notes,
-      populationRaw: match.populationRaw,
-      medianIncomeRaw: match.medianIncomeRaw,
+      city: dbRow.name,
+      state: country ?? '',
+      cityId: '',
+      population: dbRow.population,
+      medianIncome: dbRow.medianIncome,
     });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

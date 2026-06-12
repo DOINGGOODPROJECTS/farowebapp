@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { query } from '@/lib/db';
 
 type EconomyRow = {
   cityId: string;
@@ -123,17 +124,33 @@ export async function GET(req: NextRequest) {
     }
 
     const match = matches[0] || nameMatches[0];
-    if (!match) {
-      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    if (match?.businessScore != null) {
+      return NextResponse.json({
+        businessScore: match.businessScore,
+        opportunityScore: match.opportunityScore,
+        networkStrength: match.networkStrength,
+        city: match.name,
+        state: match.stateCode,
+        cityId: match.cityId,
+      });
     }
 
+    // Fallback: City table in database (covers African cities)
+    const dbRows = await query<{ name: string; country: string; businessScore: number | null; opportunityScore: number | null; networkStrength: number | null }>(
+      'SELECT name, country, businessScore, opportunityScore, networkStrength FROM `City` WHERE name = ? LIMIT 1',
+      [city],
+    );
+    const dbRow = dbRows[0];
+    if (!dbRow?.businessScore) {
+      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    }
     return NextResponse.json({
-      businessScore: match.businessScore,
-      opportunityScore: match.opportunityScore,
-      networkStrength: match.networkStrength,
-      city: match.name,
-      state: match.stateCode,
-      cityId: match.cityId,
+      businessScore: dbRow.businessScore,
+      opportunityScore: dbRow.opportunityScore,
+      networkStrength: dbRow.networkStrength,
+      city: dbRow.name,
+      state: country ?? '',
+      cityId: '',
     });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

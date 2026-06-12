@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { query } from '@/lib/db';
 
 type CityRow = {
   cityId: string;
@@ -122,20 +123,31 @@ export async function GET(req: NextRequest) {
     }
 
     const match = matches[0] || nameMatches[0];
-    if (!match) {
-      return NextResponse.json({ error: 'City not found' }, { status: 404 });
-    }
-    if (!match.population) {
-      return NextResponse.json({ error: 'Population not available' }, { status: 404 });
+    if (match?.population) {
+      return NextResponse.json({
+        population: match.population,
+        city: match.name,
+        state: match.stateCode,
+        cityId: match.cityId,
+        populationRaw: match.populationRaw,
+        medianIncomeRaw: match.medianIncomeRaw,
+      });
     }
 
+    // Fallback: check City table in database (covers African cities)
+    const dbRows = await query<{ name: string; country: string; population: number | null }>(
+      'SELECT name, country, population FROM `City` WHERE name = ? LIMIT 1',
+      [city],
+    );
+    const dbRow = dbRows[0];
+    if (!dbRow?.population) {
+      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    }
     return NextResponse.json({
-      population: match.population,
-      city: match.name,
-      state: match.stateCode,
-      cityId: match.cityId,
-      populationRaw: match.populationRaw,
-      medianIncomeRaw: match.medianIncomeRaw,
+      population: dbRow.population,
+      city: dbRow.name,
+      state: country ?? '',
+      cityId: '',
     });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

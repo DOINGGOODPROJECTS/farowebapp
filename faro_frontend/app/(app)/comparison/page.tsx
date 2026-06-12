@@ -14,6 +14,7 @@ const metrics = [
 
 export default function ComparisonPage() {
   const [selection, setSelection] = useState(["atlanta-ga", "houston-tx"]);
+  const [search, setSearch] = useState("");
   const [metricsBySlug, setMetricsBySlug] = useState<
     Record<
       string,
@@ -222,21 +223,108 @@ export default function ComparisonPage() {
             Export CSV
           </button>
         </div>
-        <div className="mt-6 flex flex-wrap gap-3 text-xs">
-          {cities.map((city) => (
-            <button
-              key={city.slug}
-              onClick={() => toggleCity(city.slug)}
-              className={`rounded-full border px-4 py-2 font-semibold transition ${
-                selection.includes(city.slug)
-                  ? "border-[#0f766e] bg-[#0f766e]/10 text-[#0b4f4a]"
-                  : "border-[#1e1a16]/15 bg-white/60 text-[#4f463c]"
-              }`}
-            >
-              {city.name}
-            </button>
-          ))}
-        </div>
+        {/* Search + selected chips */}
+        {(() => {
+          const regionOrder = [
+            "U.S. South", "DMV", "U.S. Midwest",
+            "North Africa", "West Africa", "East Africa",
+            "Central Africa", "Southern Africa",
+          ];
+
+          const filtered = search.trim().length > 0
+            ? cities.filter((c) => {
+                const q = search.toLowerCase();
+                const label = c.country === "United States" ? c.state : c.country;
+                return c.name.toLowerCase().includes(q) || label.toLowerCase().includes(q);
+              })
+            : null;
+
+          const grouped = cities.reduce<Record<string, typeof cities>>((acc, city) => {
+            if (!acc[city.region]) acc[city.region] = [];
+            acc[city.region].push(city);
+            return acc;
+          }, {});
+
+          const CityBtn = ({ city }: { city: (typeof cities)[0] }) => {
+            const label = city.country === "United States" ? city.state : city.country;
+            const active = selection.includes(city.slug);
+            return (
+              <button
+                onClick={() => toggleCity(city.slug)}
+                title={`${city.name}, ${label}`}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition ${
+                  active
+                    ? "border-[#0f766e] bg-[#0f766e]/10 font-semibold text-[#0b4f4a]"
+                    : "border-[#1e1a16]/12 bg-white/60 text-[#4f463c] hover:border-[#0f766e]/40 hover:bg-white/80"
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold leading-tight">{city.name}</span>
+                  <span className="block truncate text-[10px] leading-tight text-[#8a7d70]">{label}</span>
+                </span>
+                {active && (
+                  <svg className="h-3 w-3 shrink-0 text-[#0f766e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7"/></svg>
+                )}
+              </button>
+            );
+          };
+
+          return (
+            <div className="mt-5 space-y-4">
+              {/* Search */}
+              <div className="relative">
+                <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a7d70]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search city or country…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full rounded-xl border border-[#1e1a16]/15 bg-white/70 py-2.5 pl-9 pr-4 text-sm text-[#1e1a16] placeholder:text-[#8a7d70] focus:border-[#0f766e] focus:outline-none focus:ring-2 focus:ring-[#0f766e]/20"
+                />
+              </div>
+
+              {/* Selected chips */}
+              {selection.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {cities.filter(c => selection.includes(c.slug)).map(c => (
+                    <span key={c.slug} className="inline-flex items-center gap-1.5 rounded-full bg-[#0f766e] px-3 py-1 text-[11px] font-semibold text-white">
+                      {c.name}
+                      <button onClick={() => toggleCity(c.slug)} className="hover:text-white/70">✕</button>
+                    </span>
+                  ))}
+                  <button onClick={() => { setSelection([]); }} className="text-[11px] text-[#8a7d70] underline hover:text-[#0f766e]">Clear all</button>
+                </div>
+              )}
+
+              {/* Search results OR grouped list */}
+              {filtered ? (
+                <div className="flex flex-wrap gap-2">
+                  {filtered.length === 0
+                    ? <p className="text-xs text-[#8a7d70]">No cities found.</p>
+                    : filtered.map(city => <CityBtn key={city.slug} city={city} />)
+                  }
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {regionOrder.filter(r => grouped[r]).map((region) => (
+                    <details key={region} open className="group">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 select-none">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.35em] text-[#8a7d70]">
+                          {region.includes("Africa") ? "🌍" : "🇺🇸"} {region}
+                        </span>
+                        <span className="ml-auto text-[10px] text-[#8a7d70] group-open:hidden">▼</span>
+                        <span className="ml-auto text-[10px] text-[#8a7d70] hidden group-open:inline">▲</span>
+                      </summary>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {grouped[region].map(city => <CityBtn key={city.slug} city={city} />)}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </section>
 
       <section className="glass-panel overflow-hidden rounded-3xl">

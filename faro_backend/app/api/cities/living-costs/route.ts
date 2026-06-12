@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { query } from '@/lib/db';
 
 type LivingCostRow = {
   cityId: string;
@@ -115,16 +116,31 @@ export async function GET(req: NextRequest) {
     }
 
     const match = matches[0] || nameMatches[0];
-    if (!match) {
-      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    if (match?.costIndex != null) {
+      return NextResponse.json({
+        costIndex: match.costIndex,
+        housingIndex: match.housingIndex,
+        city: match.name,
+        state: match.stateCode,
+        cityId: match.cityId,
+      });
     }
 
+    // Fallback: City table in database (covers African cities)
+    const dbRows = await query<{ name: string; country: string; costIndex: number | null; housingIndex: number | null }>(
+      'SELECT name, country, costIndex, housingIndex FROM `City` WHERE name = ? LIMIT 1',
+      [city],
+    );
+    const dbRow = dbRows[0];
+    if (!dbRow?.costIndex) {
+      return NextResponse.json({ error: 'City not found' }, { status: 404 });
+    }
     return NextResponse.json({
-      costIndex: match.costIndex,
-      housingIndex: match.housingIndex,
-      city: match.name,
-      state: match.stateCode,
-      cityId: match.cityId,
+      costIndex: dbRow.costIndex,
+      housingIndex: dbRow.housingIndex,
+      city: dbRow.name,
+      state: country ?? '',
+      cityId: '',
     });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

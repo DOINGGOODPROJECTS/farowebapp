@@ -24,17 +24,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env.local") });
 dotenv.config();
 
-// ── AI client ─────────────────────────────────────────────────────────────────
-const useHermes = process.env.USE_HERMES === "true";
-const client = useHermes
-  ? new OpenAI({ baseURL: "http://localhost:11434/v1", apiKey: "ollama" })
-  : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = useHermes
-  ? (process.env.HERMES_MODEL || "hermes3:3b")
-  : (process.env.OPENAI_MODEL  || "gpt-4o-mini");
+// ── AI client — Groq primary (free, fast), Hermes fallback ───────────────────
+const useHermes = process.env.USE_HERMES === "true" && !process.env.GROQ_API_KEY;
+const client = process.env.GROQ_API_KEY
+  ? new OpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY })
+  : useHermes
+    ? new OpenAI({ baseURL: "http://localhost:11434/v1", apiKey: "ollama" })
+    : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const MODEL = process.env.GROQ_API_KEY
+  ? (process.env.GROQ_MODEL || "llama-3.1-8b-instant")
+  : useHermes
+    ? (process.env.HERMES_MODEL || "hermes3:3b")
+    : (process.env.OPENAI_MODEL || "gpt-4o-mini");
 
-// Smaller context budget for tiny local models
-const MAX_TEXT  = useHermes ? 2500 : 7000;
+const MAX_TEXT = process.env.GROQ_API_KEY ? 6000 : useHermes ? 2500 : 7000;
 const CONCURRENCY = 2;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,17 +100,30 @@ async function searchDDG(query, maxResults = 3) {
   }
 }
 
-// ── Score normalizer ──────────────────────────────────────────────────────────
-// Ensures a score field is a valid integer string 1–100; defaults to 50.
+// ── Type enforcers ────────────────────────────────────────────────────────────
+
+// Score field: must be integer 1–100. Returns "" if wrong type so it gets re-fetched.
 function ensureScore(val) {
   const n = parseInt(String(val ?? ""));
-  return Number.isFinite(n) && n >= 1 && n <= 100 ? String(n) : "50";
+  return Number.isFinite(n) && n >= 1 && n <= 100 ? String(n) : "";
 }
 
-const SCORE_FIELDS = [
+// Text field: must NOT be a bare number. Returns "" if just a number so it gets re-fetched.
+function ensureText(val) {
+  if (val == null || val === "") return "";
+  if (Array.isArray(val)) return val.map(i => typeof i === "object" ? Object.values(i).filter(Boolean).join(" | ") : String(i)).join("; ");
+  if (typeof val === "object") return Object.entries(val).map(([k, v]) => `${k}: ${v}`).join("; ");
+  const str = String(val).trim();
+  if (!str || str.includes("[object Object]")) return "";
+  // Reject if the value is just a plain number (e.g. "50", "85", "0")
+  if (/^\d+(\.\d+)?$/.test(str)) return "";
+  return str;
+}
+
+const SCORE_FIELDS = new Set([
   "cost_index", "housing_index_score", "opportunity_score",
   "network_strength", "business_score", "underrepresented_entrepreneurs_pct",
-];
+]);
 
 // ── Field descriptions used by the missing-field fallback ────────────────────
 const FIELD_DESCRIPTIONS = {
@@ -149,29 +165,47 @@ const FIELD_DESCRIPTIONS = {
 };
 
 // ── Fill every empty field with a targeted AI knowledge call ─────────────────
-async function fillMissingFields(city, state, profile) {
-  const s = v => String(v ?? "").trim();
+async function fillMissingFields(city, region, profile, isUS = true) {
+  // A field needs filling if: empty, [object Object], wrong type (score in text col or text in score col)
+  const needsFill = (key, val) => {
+    if (val == null || val === "") return true;
+    if (typeof val === "object") return true;
+    const s = String(val).trim();
+    if (!s || s.includes("[object Object]")) return true;
+    if (SCORE_FIELDS.has(key)) {
+      // Score field: must be an integer 1-100
+      const n = parseInt(s);
+      return !Number.isFinite(n) || n < 1 || n > 100;
+    } else {
+      // Text field: must not be a bare number
+      return /^\d+(\.\d+)?$/.test(s);
+    }
+  };
 
   const missing = Object.entries(FIELD_DESCRIPTIONS)
-    .filter(([key]) => {
-      const val = s(profile[key]);
-      return !val || val === "0";
-    });
+    .filter(([key]) => needsFill(key, profile[key]));
 
   if (missing.length === 0) return;
 
   console.log(`  [${city}] Filling ${missing.length} empty field(s) with AI knowledge...`);
 
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const note = isUS
+    ? "Use real Census, BLS, SBA, and state data."
+    : "Use your knowledge of this African city. All amounts in USD equivalent.";
+
   const schema = Object.fromEntries(missing.map(([k, desc]) => [k, desc]));
 
   const filled = await aiCall(`
-Using your training knowledge, provide a SPECIFIC, NON-EMPTY value for every field below for ${city}, ${state}, USA.
+Using your training knowledge, provide a SPECIFIC, NON-EMPTY value for every field below for ${location}.
+${note}
 
-STRICT RULES — every single field MUST have a real, specific value:
-- Use real names, real dollar amounts, real percentages — never leave a field blank.
-- Never write "N/A", "contact local", "varies by", "see website", or any vague filler.
-- For integer score fields (0–100): provide a reasonable estimate based on the city.
-- For URL fields with no known link: use the most likely official URL (e.g. city/state gov site).
+STRICT RULES:
+- Every field MUST have a REAL, specific, non-generic value. No placeholders, no "[object Object]".
+- Text fields: real names, real dollar amounts, real percentages — plain strings only.
+- Score fields (integers 0–100): provide a REAL estimate based on your knowledge. Do NOT use 50 as a default.
+- URL fields: use the most likely official URL.
+- NEVER return arrays or nested objects — plain strings only.
 
 Return ONLY valid JSON with every key filled:
 ${JSON.stringify(schema, null, 2)}
@@ -179,9 +213,18 @@ ${JSON.stringify(schema, null, 2)}
 
   if (!filled) return;
 
+  const s = v => {
+    if (v == null || v === "") return "";
+    if (Array.isArray(v)) return v.map(i => typeof i === "object" ? Object.values(i).filter(Boolean).join(" | ") : String(i)).join("; ");
+    if (typeof v === "object") return Object.entries(v).map(([k, val]) => `${k}: ${val}`).join("; ");
+    const str = String(v).trim();
+    return (str === "0" || str === "50" || str.includes("[object Object]")) ? "" : str;
+  };
+
   for (const [key] of missing) {
-    const val = s(filled[key]);
-    if (val && val !== "0") profile[key] = val;
+    const raw = filled[key];
+    const val = SCORE_FIELDS.has(key) ? ensureScore(raw) : ensureText(raw);
+    if (val) profile[key] = val;
   }
 }
 
@@ -204,227 +247,230 @@ function isGeneric(obj) {
 
 // ── AI-knowledge fallback (no web text — uses model's own city knowledge) ─────
 
-const FALLBACK_PROMPTS = {
-  economic: (city, state) => `
-Using your training knowledge, provide ACCURATE and SPECIFIC economic data for ${city}, ${state}, USA.
-Every value must be specific to ${city} — real dollar amounts, real employer names, real percentages.
-Scores must be integers 0–100.
-Return ONLY valid JSON with exactly these keys:
+function buildFallbackPrompt(category, city, region, isUS) {
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const currency = isUS ? "USD" : "USD (and local currency equivalent)";
+  const minorNote = isUS
+    ? "minority/Black/women/veteran-owned businesses"
+    : "women, youth, diaspora, and underrepresented entrepreneurs";
+
+  const prompts = {
+    economic: `Using your training knowledge, fill in SPECIFIC economic data for ${location}. All text fields must be plain strings with real data.
+Return ONLY valid JSON:
 {
-  "cost_of_living": "",
-  "cost_index": 0,
-  "housing_rent_estimates": "",
-  "housing_index_score": 0,
-  "median_income": "",
-  "employment_indicators": "",
-  "industry_strengths": "",
-  "business_environment": "",
-  "minority_representation": "",
-  "underrepresented_entrepreneurs_pct": 0,
-  "opportunity_score": 0
+  "cost_of_living": "Real cost-of-living summary for ${city} with actual numbers in ${currency}. E.g. housing, grocery, transport monthly costs.",
+  "cost_index": <integer 0-100, 100=most affordable>,
+  "housing_rent_estimates": "Real average monthly rent in ${city}: studio, 1-bed, 2-bed in ${currency} with neighborhood examples.",
+  "housing_index_score": <integer 0-100, 100=most affordable>,
+  "median_income": "Real median household income in ${city} in ${currency}. Include poverty rate if known.",
+  "employment_indicators": "Real unemployment rate for ${city}. Top 5 real employers or dominant economic sectors by name.",
+  "industry_strengths": "Top 5 real industries in ${city}. Name actual companies or organizations present there.",
+  "business_environment": "What makes ${city} attractive for business: tax rates, rankings, enterprise zones, government programs — specific facts.",
+  "minority_representation": "Real stats on ${minorNote} in ${city}: population %, business ownership %, any notable data.",
+  "underrepresented_entrepreneurs_pct": <integer 0-100 estimate>,
+  "opportunity_score": <integer 0-100 overall opportunity for underrepresented founders>
 }`,
 
-  ecosystem: (city, state) => `
-Using your training knowledge, name REAL organizations and places in ${city}, ${state}, USA.
-Scores must be integers 0–100.
-Return ONLY valid JSON with exactly these keys:
+    ecosystem: `Using your training knowledge, fill in REAL business ecosystem data for ${location}. Name actual organizations. All text fields must be plain strings.
+Return ONLY valid JSON:
 {
-  "incubators_accelerators": "",
-  "coworking_spaces": "",
-  "startup_hubs": "",
-  "mentorship_networks": "",
-  "network_strength": 0,
-  "chambers_of_commerce": "",
-  "black_business_organizations": "",
-  "business_score": 0
+  "incubators_accelerators": "2-4 REAL incubator or accelerator names in ${city} with brief description of each. No placeholders.",
+  "coworking_spaces": "REAL coworking spaces in ${city}: specific names and neighborhoods. E.g. iHub, Impact Hub, WeWork, local spaces.",
+  "startup_hubs": "Primary tech/innovation district or hub in ${city}: name, neighborhood, and what makes it notable.",
+  "mentorship_networks": "REAL mentorship programs in ${city}: e.g. SCORE chapter (US), Tony Elumelu Foundation, AfriLabs, local SBDC, specific programs by name.",
+  "network_strength": <integer 0-100>,
+  "chambers_of_commerce": "Full name and website of the primary Chamber of Commerce for ${city}.",
+  "black_business_organizations": "REAL ${minorNote} networks or organizations active in ${city}. Name specific groups.",
+  "business_score": <integer 0-100>
 }`,
 
-  grants: (city, state) => `
-Using your training knowledge, name a REAL grant or funding program for entrepreneurs in ${city} or ${state}, USA.
-Return ONLY valid JSON with exactly these keys:
+    grants: `Using your training knowledge, name a REAL grant or funding program for entrepreneurs in ${location}. All values must be plain strings.
+Return ONLY valid JSON:
 {
-  "grant_name": "",
-  "funder": "",
-  "eligibility_criteria": "",
-  "funding_amount": "",
-  "deadline": "",
-  "application_link": "",
-  "geographic_scope": "",
-  "target_audience": ""
+  "grant_name": "Full name of a REAL existing grant or funding program in ${city} or ${region}",
+  "funder": "Full legal name of the real organization offering this grant",
+  "eligibility_criteria": "Specific requirements: business type, ownership, industry, revenue cap, location",
+  "funding_amount": "Specific amount in ${currency} (e.g. '$5,000-$50,000')",
+  "deadline": "Real deadline or cycle (e.g. 'Rolling basis', 'Quarterly')",
+  "application_link": "Real URL to the grant application or program page",
+  "geographic_scope": "City, country, region, or continent scope",
+  "target_audience": "Exactly who qualifies — be specific about ownership type and sector"
 }`,
 
-  policy: (city, state) => `
-Using your training knowledge, name REAL policy incentives and government programs in ${state} and ${city}, USA.
-Return ONLY valid JSON with exactly these keys:
+    policy: `Using your training knowledge, fill in REAL policy incentives for ${location}. All values must be plain strings (no arrays, no objects).
+Return ONLY valid JSON:
 {
-  "tax_incentives": "",
-  "startup_support_programs": "",
-  "minority_business_certifications": "",
-  "government_backed_initiatives": ""
+  "tax_incentives": "REAL tax incentive programs in ${region} — name each program, rate/amount, and what activity it rewards. Specific facts only.",
+  "startup_support_programs": "REAL programs supporting startups in ${city} — names, what they provide (loans, training, grants), who runs them.",
+  "minority_business_certifications": "REAL certification programs for ${minorNote} in ${region} — issuing agency, how to apply, what benefits they provide.",
+  "government_backed_initiatives": "REAL government or international initiatives in ${city}: SEZs, free trade zones, development bank programs, Opportunity Zones — name them specifically."
 }`,
 
-  cost: (city, state) => `
-Using your training knowledge, provide SPECIFIC cost data for ${city}, ${state}, USA with real dollar amounts.
-Include actual ${state} LLC filing fee, actual ${state} minimum wage, real rent ranges, real utility costs.
-Return ONLY valid JSON with exactly these keys:
+    cost: `Using your training knowledge, fill in SPECIFIC cost data for ${location} with real numbers. All values must be plain strings.
+Return ONLY valid JSON:
 {
-  "living_expenses": "",
-  "business_setup_costs": "",
-  "hiring_costs": "",
-  "utilities_and_infrastructure": ""
+  "living_expenses": "Real monthly cost breakdown for ${city}: rent + groceries + transport + utilities in ${currency}. Give specific amounts and a total range.",
+  "business_setup_costs": "Real cost to register a business in ${region}: registration fee, legal fees, local permits in ${currency} with specific amounts.",
+  "hiring_costs": "Real minimum wage in ${region} in ${currency}/hr or month, average salary for office/tech workers, employer payroll tax or social contribution rates.",
+  "utilities_and_infrastructure": "Real average monthly costs in ${city}: electricity, internet, water+gas in ${currency}. Note internet quality and key providers."
 }`,
-};
+  };
 
-async function aiKnowledgeFallback(city, state, category) {
-  return (await aiCall(FALLBACK_PROMPTS[category](city, state))) || {};
+  return prompts[category];
+}
+
+async function aiKnowledgeFallback(city, region, category, isUS = true) {
+  return (await aiCall(buildFallbackPrompt(category, city, region, isUS))) || {};
 }
 
 // ── Category extractors — strict prompts demand city-specific data ─────────────
 
-async function extractEconomicData(city, state, text) {
+async function extractEconomicData(city, region, text, isUS = true) {
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const incomeRef = isUS ? "Median household income and per capita income (cite Census year). Include poverty rate." : "Estimated median household income in USD and local currency. Include GDP per capita if available.";
+  const employRef = isUS ? "Unemployment rate (cite BLS). Top 5 employers by name with headcount." : "Estimated unemployment rate. Top 5 employers or economic sectors by name.";
+  const minorityRef = isUS ? "Black/minority percentage of population (Census). Percentage of minority-owned businesses." : "Percentage of underrepresented entrepreneurs (women, youth, diaspora). Any available stats on minority business ownership.";
+
   const data = await aiCall(`
-You are extracting economic data EXCLUSIVELY for ${city}, ${state}, USA.
+You are extracting economic data EXCLUSIVELY for ${location}.
+Return ONLY valid JSON. All score fields must be integers 0–100. All text fields must be plain strings (NO arrays, NO nested objects).
 
-MANDATORY RULES — violations make the data useless:
-1. Every field MUST be specific to ${city}. No generic descriptions.
-2. Include REAL numbers: actual dollar amounts, real index scores, real percentages.
-3. Name REAL employers, REAL industries present in ${city}.
-4. Never write vague phrases like "contact agencies", "varies by area", "see website".
-5. Use the web text below; where it lacks detail, use your knowledge of ${city}.
-
-Return ONLY valid JSON — no markdown, no commentary.
-All score fields must be integers 0–100:
 {
-  "cost_of_living": "Exact cost-of-living index for ${city} vs US average (100). Include housing, grocery, utility, and transport sub-indexes with numbers.",
-  "cost_index": "Integer 0–100 scoring overall affordability for entrepreneurs (100 = most affordable). Derive from cost-of-living index relative to US average.",
-  "housing_rent_estimates": "Average rent in ${city}: studio, 1BR, and 2BR in dollars per month. Include neighborhood variation (e.g. downtown vs suburbs).",
-  "housing_index_score": "Integer 0–100 scoring housing affordability in ${city} (100 = most affordable). Derive from median rent vs median income ratio.",
-  "median_income": "Median household income and per capita income for ${city} (cite Census year). Include poverty rate.",
-  "employment_indicators": "Unemployment rate for ${city} metro area (cite BLS). Top 5 employers in ${city} by name with headcount.",
-  "industry_strengths": "Top 5 industries in ${city}. Name real companies headquartered or with major presence there.",
-  "business_environment": "Specific tax advantages, enterprise zones, rankings, and city/state programs that make ${city} attractive to business owners.",
-  "minority_representation": "Black/minority percentage of ${city} population (Census). Percentage of minority-owned businesses. Any notable rankings.",
-  "underrepresented_entrepreneurs_pct": "Integer 0–100 representing the estimated percentage of underrepresented (minority, women, veteran) entrepreneurs among all business owners in ${city}.",
-  "opportunity_score": "Integer 0–100 scoring overall entrepreneurial opportunity in ${city} for underrepresented founders. Factor in economic conditions, grants access, policy support, and market size."
+  "cost_of_living": "Cost-of-living summary for ${city} with real numbers — housing, groceries, utilities, transport costs in local currency and USD.",
+  "cost_index": integer 0-100 (100 = most affordable for entrepreneurs),
+  "housing_rent_estimates": "Average monthly rent in ${city}: studio, 1BR, 2BR in USD. Name specific neighborhoods.",
+  "housing_index_score": integer 0-100 (100 = most affordable housing),
+  "median_income": "${incomeRef}",
+  "employment_indicators": "${employRef}",
+  "industry_strengths": "Top 5 industries in ${city}. Name real companies or organizations present there.",
+  "business_environment": "Specific advantages that make ${city} attractive to entrepreneurs: tax rates, rankings, special zones, notable programs.",
+  "minority_representation": "${minorityRef}",
+  "underrepresented_entrepreneurs_pct": integer 0-100,
+  "opportunity_score": integer 0-100 scoring entrepreneurial opportunity for underrepresented founders
 }
 
-Web research text for ${city}, ${state}:
+Web text for ${location}:
 ${text.slice(0, MAX_TEXT)}
 `);
 
-  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, state, "economic");
+  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, region, "economic", isUS);
   return data;
 }
 
-async function extractBusinessEcosystem(city, state, text) {
+async function extractBusinessEcosystem(city, region, text, isUS = true) {
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const mentorRef = isUS
+    ? `Full name of the SCORE chapter serving ${city}, local SBDC center, and any notable mentorship programs.`
+    : `Key mentorship programs, entrepreneurship support organizations, or international programs (e.g. Tony Elumelu Foundation, AfriLabs, GIZ) active in ${city}.`;
+  const blackOrgRef = isUS
+    ? `Names of Black-focused business organizations, minority chambers, and professional networks active in ${city}.`
+    : `Names of women entrepreneur networks, youth business organizations, and diaspora/international business networks active in ${city}.`;
+
   const data = await aiCall(`
-You are extracting business ecosystem data EXCLUSIVELY for ${city}, ${state}, USA.
+You are extracting business ecosystem data EXCLUSIVELY for ${location}.
+Return ONLY valid JSON. Score fields must be integers 0–100. ALL text fields must be plain strings (NO arrays, NO nested objects).
 
-MANDATORY RULES:
-1. Name REAL organizations that actually operate in ${city}.
-2. No placeholders — every entry must be a real, named entity in ${city}.
-3. Use the text below; where it lacks specifics, use your knowledge of ${city}.
-
-Return ONLY valid JSON. Score fields must be integers 0–100:
 {
-  "incubators_accelerators": "2–4 real incubator or accelerator program names operating in ${city} (e.g. Techstars, local university programs, city-backed programs) with a brief description of each.",
-  "coworking_spaces": "Real coworking spaces in ${city} — name specific locations including any WeWork, Regus, or locally-owned spaces with their neighborhoods.",
-  "startup_hubs": "Name of the primary innovation district or tech hub in ${city}, its location/neighborhood, and what makes it notable.",
-  "mentorship_networks": "Full name of the SCORE chapter serving ${city}, the local SBDC center name and location, and any notable local mentorship programs.",
-  "network_strength": "Integer 0–100 scoring the density and quality of mentors, accelerators, and support organizations available to underrepresented entrepreneurs in ${city}.",
-  "chambers_of_commerce": "Full name and website of the primary Chamber of Commerce for ${city}.",
-  "black_business_organizations": "Names of Black-focused business organizations, minority chambers, and professional networks active in ${city}.",
-  "business_score": "Integer 0–100 scoring how business-friendly ${city} is for underrepresented entrepreneurs. Factor in ecosystem density, ease of starting a business, tax environment, and support programs."
+  "incubators_accelerators": "2-4 real incubator or accelerator names operating in ${city} with brief description. Plain string only.",
+  "coworking_spaces": "Real coworking spaces in ${city} — specific names and neighborhoods. Plain string only.",
+  "startup_hubs": "Primary innovation district or tech hub in ${city}, its location and what makes it notable. Plain string only.",
+  "mentorship_networks": "${mentorRef} Plain string only.",
+  "network_strength": integer 0-100,
+  "chambers_of_commerce": "Full name and website of the primary Chamber of Commerce for ${city}. Plain string only.",
+  "black_business_organizations": "${blackOrgRef} Plain string only.",
+  "business_score": integer 0-100
 }
 
-Web research text for ${city}, ${state}:
+Web text for ${location}:
 ${text.slice(0, MAX_TEXT)}
 `);
 
-  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, state, "ecosystem");
+  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, region, "ecosystem", isUS);
   return data;
 }
 
-async function extractGrantsFunding(city, state, text) {
+async function extractGrantsFunding(city, region, text, isUS = true) {
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const funderHint = isUS
+    ? "government agency, nonprofit, or foundation"
+    : "government agency, development bank, international donor, or nonprofit (e.g. World Bank, AfDB, Tony Elumelu Foundation, USAID)";
+
   const data = await aiCall(`
-You are extracting grants and funding data for entrepreneurs in ${city}, ${state}, USA.
+You are extracting grants and funding data for entrepreneurs in ${location}.
+Return ONLY valid JSON with plain string values (NO arrays, NO nested objects):
 
-MANDATORY RULES:
-1. Name a REAL grant or funding program that exists for ${city} or ${state}.
-2. Funder must be a real, named organization — not "local agency" or "city office".
-3. Dollar amounts must be specific (e.g. "$10,000–$75,000" not "up to various amounts").
-4. Application link must be a real URL.
-5. Use the text below; supplement with your knowledge of programs in ${city}/${state}.
-
-Return ONLY valid JSON:
 {
-  "grant_name": "Full name of a real grant or funding program available in ${city} or ${state}",
-  "funder": "Full legal name of the government agency, nonprofit, or foundation offering this grant",
-  "eligibility_criteria": "Specific requirements: business size limit, ownership type required (minority/women/veteran-owned), industry restrictions, revenue cap, years in business",
-  "funding_amount": "Specific dollar range this program provides (e.g. '$5,000 to $50,000')",
-  "deadline": "Application deadline, cycle (e.g. 'Quarterly — check website'), or 'Rolling basis'",
-  "application_link": "Direct URL to the grant application or program page",
-  "geographic_scope": "Whether this grant covers ${city} specifically, ${state} statewide, multi-state region, or national",
-  "target_audience": "Exactly who qualifies: e.g. minority-owned small businesses under 5 years old with under $1M revenue in ${state}"
+  "grant_name": "Full name of a real grant or funding program available in ${city} or ${region}",
+  "funder": "Full name of the ${funderHint} offering this grant",
+  "eligibility_criteria": "Specific requirements: business type, ownership, industry, revenue cap, years in business",
+  "funding_amount": "Specific amount or range in USD (e.g. '$5,000 to $50,000')",
+  "deadline": "Application deadline or cycle (e.g. 'Rolling basis', 'Quarterly')",
+  "application_link": "Direct URL to the grant application page",
+  "geographic_scope": "City, country, regional, or continent-wide scope",
+  "target_audience": "Exactly who qualifies — be specific about ownership type and sector"
 }
 
-Web research text for ${city}, ${state}:
+Web text for ${location}:
 ${text.slice(0, MAX_TEXT)}
 `);
 
-  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, state, "grants");
+  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, region, "grants", isUS);
   return data;
 }
 
-async function extractPolicyIncentives(city, state, text) {
+async function extractPolicyIncentives(city, region, text, isUS = true) {
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const certRef = isUS
+    ? `Federal certifications (SBA 8(a), WOSB, HUBZone, SDVOSB) plus ${region}-specific MBE/WBE/DBE programs — include issuing agency and how to apply.`
+    : `Business registration and certification programs in ${region} for entrepreneurs — include government-issued licenses, investment promotion agency programs, and any diaspora/women entrepreneur certifications.`;
+  const govRef = isUS
+    ? `Opportunity Zone tracts in ${city}, CDBG allocation, MBDA Business Center presence, and notable city economic programs.`
+    : `Special Economic Zones (SEZ), free trade zones, investment promotion programs, and international development-backed initiatives (World Bank, AfDB, IFC) in ${city} or ${region}.`;
+
   const data = await aiCall(`
-You are extracting policy incentives for businesses in ${city}, ${state}, USA.
+You are extracting policy incentives for businesses in ${location}.
+Return ONLY valid JSON with plain string values (NO arrays, NO nested objects):
 
-MANDATORY RULES:
-1. Name REAL programs and tax credits by their official names.
-2. Include specific credit amounts, rates, or caps where known.
-3. Name real certification bodies and real initiative programs.
-4. Use the text below; supplement with your knowledge of ${state} and ${city} policy.
-
-Return ONLY valid JSON:
 {
-  "tax_incentives": "Real tax credit or incentive programs in ${state} for businesses — name each program, the credit amount or rate, and what activity it rewards.",
-  "startup_support_programs": "Real city and state programs supporting startups in ${city} — include program names, what they provide (loans, grants, training), and who runs them.",
-  "minority_business_certifications": "Federal certifications (SBA 8(a), WOSB, HUBZone, SDVOSB, VOSB) plus ${state}-specific MBE/WBE/DBE programs — include the agency that issues each and how to apply.",
-  "government_backed_initiatives": "Real federal and ${city} initiatives: Opportunity Zone tracts in ${city}, CDBG allocation use, MBDA Business Center presence, and any notable city-specific economic programs."
+  "tax_incentives": "Real tax incentive programs in ${region} — name each program, credit amount or rate, and what it rewards. Plain string only.",
+  "startup_support_programs": "Real programs supporting startups in ${city} — names, what they provide (loans, training, workspace), who runs them. Plain string only.",
+  "minority_business_certifications": "${certRef} Plain string only.",
+  "government_backed_initiatives": "${govRef} Plain string only."
 }
 
-Web research text for ${city}, ${state}:
+Web text for ${location}:
 ${text.slice(0, MAX_TEXT)}
 `);
 
-  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, state, "policy");
+  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, region, "policy", isUS);
   return data;
 }
 
-async function extractCostData(city, state, text) {
+async function extractCostData(city, region, text, isUS = true) {
+  const location = isUS ? `${city}, ${region}, USA` : `${city}, ${region}`;
+  const setupRef = isUS
+    ? `LLC filing fee in ${region} (exact $), registered agent fee ($/yr), local business license for ${city} (approx $).`
+    : `Business registration costs in ${region} — company registration fee, notary/legal fees, local permits. Include approximate USD amounts.`;
+  const hiringRef = isUS
+    ? `${region} minimum wage ($/hr), average hourly pay for admin/retail/tech roles in ${city}, employer payroll tax rate.`
+    : `Minimum wage in ${region} in local currency and USD equivalent, average monthly salary for office/tech workers, employer social contribution rates.`;
+
   const data = await aiCall(`
-You are extracting cost and relocation data EXCLUSIVELY for ${city}, ${state}, USA.
+You are extracting cost and relocation data EXCLUSIVELY for ${location}.
+Return ONLY valid JSON with plain string values (NO arrays, NO nested objects):
 
-MANDATORY RULES:
-1. All costs must be specific dollar amounts for ${city} — no vague ranges.
-2. Use actual ${state} LLC registration fee (exact dollar amount).
-3. Include actual ${state} minimum wage (current hourly rate).
-4. Use the text below; supplement with your knowledge of ${city}.
-
-Return ONLY valid JSON:
 {
-  "living_expenses": "Monthly cost of living breakdown for ${city}: rent + groceries + transportation + utilities. Provide specific dollar amounts and a total monthly range.",
-  "business_setup_costs": "Cost to start a business in ${state}: LLC filing fee (exact $), registered agent fee ($/yr), local business license for ${city} (approx $), plus any industry-specific permits.",
-  "hiring_costs": "${state} minimum wage ($/hr), average hourly pay for key roles in ${city} (admin, retail, tech), and approximate employer payroll tax rate.",
-  "utilities_and_infrastructure": "Average monthly utility costs in ${city}: electricity ($/mo), internet ($/mo), water+gas ($/mo). Note key providers and internet infrastructure quality."
+  "living_expenses": "Monthly cost breakdown for ${city}: rent + groceries + transport + utilities in USD. Give specific amounts and a total monthly range.",
+  "business_setup_costs": "${setupRef} Plain string only.",
+  "hiring_costs": "${hiringRef} Plain string only.",
+  "utilities_and_infrastructure": "Average monthly costs in ${city}: electricity, internet, water+gas in USD. Note internet quality and key providers. Plain string only."
 }
 
-Web research text for ${city}, ${state}:
+Web text for ${location}:
 ${text.slice(0, MAX_TEXT)}
 `);
 
-  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, state, "cost");
+  if (!data || isGeneric(data)) return aiKnowledgeFallback(city, region, "cost", isUS);
   return data;
 }
 
@@ -432,98 +478,118 @@ ${text.slice(0, MAX_TEXT)}
 
 async function researchCity(cityData) {
   const {
-    city, state, censusSlug, govUrl, chamberUrl, ecosystemUrl,
+    city, state, country = "United States", censusSlug, govUrl, chamberUrl, ecosystemUrl,
     grantUrl, stateGovUrl, numbeoCity,
   } = cityData;
 
-  const censusUrl = `https://www.census.gov/quickfacts/${censusSlug}`;
+  const isUS = country === "United States";
+  const region = state || country; // use country as region label for African cities
+
   const numbeoUrl = `https://www.numbeo.com/cost-of-living/in/${encodeURIComponent(numbeoCity || city)}`;
+  const primaryEconUrl = isUS
+    ? `https://www.census.gov/quickfacts/${censusSlug}`
+    : govUrl;
 
   console.log(`  [${city}] Searching DuckDuckGo for city-specific pages...`);
 
-  // Targeted DDG searches — one per category that benefits most from live search
+  // Targeted DDG searches — adapted for US vs African cities
   const [ecosystemUrls, grantUrls, policyUrls] = await Promise.all([
-    searchDDG(`"${city}" "${state}" incubators accelerators coworking spaces Black business organizations`, 3),
-    searchDDG(`"${city}" OR "${state}" small business grants minority entrepreneurs funding 2024 2025`, 3),
-    searchDDG(`"${state}" business tax credits incentives startup programs economic development`, 2),
+    searchDDG(`"${city}" "${country}" incubators accelerators coworking startup hub business organizations entrepreneurs`, 3),
+    searchDDG(`"${city}" OR "${country}" small business grants minority entrepreneurs funding investment 2024 2025`, 3),
+    isUS
+      ? searchDDG(`"${region}" business tax credits incentives startup programs economic development`, 2)
+      : searchDDG(`"${country}" investment incentives tax holiday SEZ special economic zone entrepreneur`, 2),
   ]);
 
   console.log(`  [${city}] Fetching authoritative pages...`);
 
-  // Each category gets its own relevant URL set
   const [econText, ecosystemText, grantText, policyText, costText] = await Promise.all([
-    fetchMany([censusUrl, govUrl]),
-    fetchMany([chamberUrl, ecosystemUrl, ...ecosystemUrls]),
-    fetchMany([grantUrl, ...grantUrls, "https://www.sba.gov/funding-programs/grants", "https://mbda.gov/resources/grants"]),
-    fetchMany([govUrl, stateGovUrl, ...policyUrls]),
-    fetchMany([numbeoUrl, govUrl]),
+    fetchMany([primaryEconUrl, govUrl].filter(Boolean)),
+    fetchMany([chamberUrl, ecosystemUrl, ...ecosystemUrls].filter(Boolean)),
+    isUS
+      ? fetchMany([grantUrl, ...grantUrls, "https://www.sba.gov/funding-programs/grants", "https://mbda.gov/resources/grants"].filter(Boolean))
+      : fetchMany([grantUrl, ...grantUrls].filter(Boolean)),
+    fetchMany([govUrl, stateGovUrl, ...policyUrls].filter(Boolean)),
+    fetchMany([numbeoUrl, govUrl].filter(Boolean)),
   ]);
 
   console.log(`  [${city}] Extracting city-specific data...`);
 
   const [economic, ecosystem, grants, policy, cost] = await Promise.all([
-    extractEconomicData(city, state, econText),
-    extractBusinessEcosystem(city, state, ecosystemText),
-    extractGrantsFunding(city, state, grantText),
-    extractPolicyIncentives(city, state, policyText),
-    extractCostData(city, state, costText),
+    extractEconomicData(city, region, econText, isUS),
+    extractBusinessEcosystem(city, region, ecosystemText, isUS),
+    extractGrantsFunding(city, region, grantText, isUS),
+    extractPolicyIncentives(city, region, policyText, isUS),
+    extractCostData(city, region, costText, isUS),
   ]);
 
-  const s = v => String(v || "").trim();
+  // t() = text field: must not be a bare number
+  // sc() = score field: must be integer 1-100
+  const t  = ensureText;
+  const sc = ensureScore;
 
   const profile = {
     city,
-    state,
-    country: "United States",
-    primarySourceUrl: govUrl || censusUrl,
+    state: isUS ? state : "",
+    country,
+    primarySourceUrl: govUrl || primaryEconUrl,
 
-    cost_of_living:                    s(economic.cost_of_living),
-    cost_index:                        s(economic.cost_index),
-    housing_rent_estimates:            s(economic.housing_rent_estimates),
-    housing_index_score:               s(economic.housing_index_score),
-    median_income:                     s(economic.median_income),
-    employment_indicators:             s(economic.employment_indicators),
-    industry_strengths:                s(economic.industry_strengths),
-    business_environment:              s(economic.business_environment),
-    minority_representation:           s(economic.minority_representation),
-    underrepresented_entrepreneurs_pct: s(economic.underrepresented_entrepreneurs_pct),
-    opportunity_score:                 s(economic.opportunity_score),
+    // CITY ECONOMIC DATA
+    cost_of_living:                     t(economic.cost_of_living),
+    cost_index:                        sc(economic.cost_index),
+    housing_rent_estimates:             t(economic.housing_rent_estimates),
+    housing_index_score:               sc(economic.housing_index_score),
+    median_income:                      t(economic.median_income),
+    employment_indicators:              t(economic.employment_indicators),
+    industry_strengths:                 t(economic.industry_strengths),
+    business_environment:               t(economic.business_environment),
+    minority_representation:            t(economic.minority_representation),
+    underrepresented_entrepreneurs_pct: sc(economic.underrepresented_entrepreneurs_pct),
+    opportunity_score:                  sc(economic.opportunity_score),
 
-    incubators_accelerators:      s(ecosystem.incubators_accelerators),
-    coworking_spaces:             s(ecosystem.coworking_spaces),
-    startup_hubs:                 s(ecosystem.startup_hubs),
-    mentorship_networks:          s(ecosystem.mentorship_networks),
-    network_strength:             s(ecosystem.network_strength),
-    chambers_of_commerce:         s(ecosystem.chambers_of_commerce),
-    black_business_organizations: s(ecosystem.black_business_organizations),
-    business_score:               s(ecosystem.business_score),
+    // BUSINESS ECOSYSTEM
+    incubators_accelerators:      t(ecosystem.incubators_accelerators),
+    coworking_spaces:             t(ecosystem.coworking_spaces),
+    startup_hubs:                 t(ecosystem.startup_hubs),
+    mentorship_networks:          t(ecosystem.mentorship_networks),
+    network_strength:            sc(ecosystem.network_strength),
+    chambers_of_commerce:         t(ecosystem.chambers_of_commerce),
+    black_business_organizations: t(ecosystem.black_business_organizations),
+    business_score:              sc(ecosystem.business_score),
 
-    grant_name:           s(grants.grant_name),
-    funder:               s(grants.funder),
-    eligibility_criteria: s(grants.eligibility_criteria),
-    funding_amount:       s(grants.funding_amount),
-    deadline:             s(grants.deadline),
-    application_link:     s(grants.application_link),
-    geographic_scope:     s(grants.geographic_scope),
-    target_audience:      s(grants.target_audience),
+    // GRANTS & FUNDING
+    grant_name:           t(grants.grant_name),
+    funder:               t(grants.funder),
+    eligibility_criteria: t(grants.eligibility_criteria),
+    funding_amount:       t(grants.funding_amount),
+    deadline:             t(grants.deadline),
+    application_link:     t(grants.application_link),
+    geographic_scope:     t(grants.geographic_scope),
+    target_audience:      t(grants.target_audience),
 
-    tax_incentives:                   s(policy.tax_incentives),
-    startup_support_programs:         s(policy.startup_support_programs),
-    minority_business_certifications: s(policy.minority_business_certifications),
-    government_backed_initiatives:    s(policy.government_backed_initiatives),
+    // POLICY INCENTIVES
+    tax_incentives:                   t(policy.tax_incentives),
+    startup_support_programs:         t(policy.startup_support_programs),
+    minority_business_certifications: t(policy.minority_business_certifications),
+    government_backed_initiatives:    t(policy.government_backed_initiatives),
 
-    living_expenses:              s(cost.living_expenses),
-    business_setup_costs:         s(cost.business_setup_costs),
-    hiring_costs:                 s(cost.hiring_costs),
-    utilities_and_infrastructure: s(cost.utilities_and_infrastructure),
+    // COST & RELOCATION
+    living_expenses:              t(cost.living_expenses),
+    business_setup_costs:         t(cost.business_setup_costs),
+    hiring_costs:                 t(cost.hiring_costs),
+    utilities_and_infrastructure: t(cost.utilities_and_infrastructure),
   };
 
-  // Guarantee no empty columns — fill any gaps with targeted AI knowledge
-  await fillMissingFields(city, state, profile);
+  // Fill any remaining empty/invalid fields with AI knowledge
+  await fillMissingFields(city, region, profile, isUS);
 
-  // Ensure all score fields are valid integers 1–100
-  for (const field of SCORE_FIELDS) {
-    profile[field] = ensureScore(profile[field]);
+  // Final type enforcement pass — fixes any AI-fallback type mismatches
+  for (const [key, val] of Object.entries(profile)) {
+    if (SCORE_FIELDS.has(key)) {
+      profile[key] = ensureScore(val);
+    } else if (typeof val === "string") {
+      profile[key] = ensureText(val);
+    }
   }
 
   return profile;
@@ -576,7 +642,10 @@ for (let i = 0; i < cities.length; i += CONCURRENCY) {
 
     try {
       const action = existing ? `↻ Updating row ${existing.rowNumber}` : "+ Adding new row";
-      console.log(`[${num}/${cities.length}] ${action}: ${cityData.city}, ${cityData.state}`);
+      const location = cityData.country && cityData.country !== "United States"
+        ? `${cityData.city}, ${cityData.country}`
+        : `${cityData.city}, ${cityData.state}`;
+      console.log(`[${num}/${cities.length}] ${action}: ${location}`);
 
       const profile = await researchCity(cityData);
 

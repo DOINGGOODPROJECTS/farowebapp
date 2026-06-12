@@ -11,6 +11,11 @@ const regions = [
   "U.S. South",
   "DMV",
   "U.S. Midwest",
+  "North Africa",
+  "West Africa",
+  "East Africa",
+  "Central Africa",
+  "Southern Africa",
 ] as const;
 const sortOptions = [
   { label: "Opportunity Score", key: "opportunityScore" },
