@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python3 -)",
+      "Bash(find /home/bright/Desktop/jobpilotng/jobpilot -type f -name \"*.tsx\" | grep -v node_modules | xargs grep -l \"See Review\\\\|ShareJob\\\\|Apply Now\" 2>/dev/null | head -10)",
+      "Read(//home/bright/Desktop/jobpilotng/jobpilot/**)",
+      "Bash(node fillAfricanCityData.mjs)",
+      "Bash(tail -30 /tmp/africa_agent.log)",
+      "Read(//tmp/**)"
+    ],
+    "additionalDirectories": [
+      "/home/bright/Desktop/jobpilotng/jobpilot/app",
+      "/home/bright/Desktop/cool_lion_webprojects/farominigpt/faro_backend/lib"
+    ]
+  }
+}
